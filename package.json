@@ -1,0 +1,12 @@
+{
+  "name": "sosoph",
+  "version": "1.0.0",
+  "description": "A smooth four-key rhythm game with a live-synthesized soundtrack.",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "check": "node tools/check-chart.js"
+  },
+  "license": "MIT",
+  "private": true
+}

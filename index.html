@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+<meta name="theme-color" content="#05060f" />
+<title>Sosoph — Neon Drift</title>
+<meta name="description" content="A smooth four-key rhythm game with a live-synthesized soundtrack." />
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+<canvas id="stage"></canvas>
+
+<main id="ui">
+
+  <!-- ------------------------------------------------------------ title -->
+  <section class="screen is-active" id="screen-title">
+    <div class="stack">
+      <header class="hero">
+        <h1 class="logo">SOSOPH</h1>
+        <p class="tagline">four-key rhythm · soundtrack synthesized live</p>
+      </header>
+
+      <div class="panel card">
+        <div class="card-head">
+          <div>
+            <div class="card-title" id="stage-name">Neon Drift</div>
+            <div class="card-sub" id="stage-sub">Stage 1 · Normal</div>
+          </div>
+          <div class="level"><b id="stage-level">4</b><small>LV</small></div>
+        </div>
+
+        <div class="meta">
+          <div><b id="meta-bpm">—</b><small>BPM</small></div>
+          <div><b id="meta-notes">—</b><small>NOTES</small></div>
+          <div><b id="meta-len">—</b><small>LENGTH</small></div>
+        </div>
+
+        <div class="best" id="best-row">
+          <span class="best-label">Best</span>
+          <span class="best-value" id="best-value">— · —</span>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button class="btn primary" id="btn-play">
+          <span>Play</span>
+        </button>
+        <button class="btn ghost" id="btn-open-settings">Settings</button>
+      </div>
+
+      <p class="keyhint">
+        <kbd>D</kbd><kbd>F</kbd><kbd>J</kbd><kbd>K</kbd>
+        <span>or tap the lanes · <kbd>Esc</kbd> to pause</span>
+      </p>
+    </div>
+  </section>
+
+  <!-- --------------------------------------------------------- settings -->
+  <section class="screen" id="screen-settings">
+    <div class="panel settings">
+      <h2>Settings</h2>
+
+      <label class="row" for="set-speed">
+        <span class="row-label">Note speed</span>
+        <input type="range" id="set-speed" min="1" max="3" step="0.1" />
+        <output id="out-speed"></output>
+      </label>
+
+      <label class="row" for="set-offset">
+        <span class="row-label">Audio offset
+          <em>negative if you tend to hit late</em>
+        </span>
+        <input type="range" id="set-offset" min="-120" max="120" step="1" />
+        <output id="out-offset"></output>
+      </label>
+
+      <label class="row" for="set-volume">
+        <span class="row-label">Music volume</span>
+        <input type="range" id="set-volume" min="0" max="1" step="0.01" />
+        <output id="out-volume"></output>
+      </label>
+
+      <label class="row" for="set-hit">
+        <span class="row-label">Hit sound</span>
+        <input type="range" id="set-hit" min="0" max="1" step="0.01" />
+        <output id="out-hit"></output>
+      </label>
+
+      <label class="row" for="set-effects">
+        <span class="row-label">Effect density</span>
+        <input type="range" id="set-effects" min="0.2" max="1.4" step="0.1" />
+        <output id="out-effects"></output>
+      </label>
+
+      <label class="row toggle" for="set-auto">
+        <span class="row-label">Autoplay
+          <em>watch a perfect run</em>
+        </span>
+        <input type="checkbox" id="set-auto" />
+        <span class="switch" aria-hidden="true"></span>
+      </label>
+
+      <div class="actions">
+        <button class="btn primary" id="btn-close-settings">Done</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ------------------------------------------------------------ pause -->
+  <section class="screen" id="screen-pause">
+    <div class="panel pause">
+      <h2>Paused</h2>
+      <div class="actions column">
+        <button class="btn primary" id="btn-resume">Resume</button>
+        <button class="btn ghost" id="btn-restart">Restart</button>
+        <button class="btn ghost" id="btn-quit">Quit to title</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ---------------------------------------------------------- results -->
+  <section class="screen" id="screen-result">
+    <div class="panel result">
+      <div class="grade-wrap">
+        <div class="grade" id="res-grade">S</div>
+        <div class="grade-ring" aria-hidden="true"></div>
+      </div>
+
+      <div class="res-banner" id="res-banner"></div>
+
+      <div class="res-score" id="res-score">0</div>
+      <div class="res-acc" id="res-acc">0.00%</div>
+
+      <ul class="tally">
+        <li style="--c:#ffe27a"><span>Perfect</span><b id="res-perfect">0</b></li>
+        <li style="--c:#7ce7ff"><span>Great</span><b id="res-great">0</b></li>
+        <li style="--c:#8eeba0"><span>Good</span><b id="res-good">0</b></li>
+        <li style="--c:#ff6b81"><span>Miss</span><b id="res-miss">0</b></li>
+        <li style="--c:#c9a7ff"><span>Max combo</span><b id="res-combo">0</b></li>
+      </ul>
+
+      <div class="actions">
+        <button class="btn primary" id="btn-retry">Retry</button>
+        <button class="btn ghost" id="btn-back">Title</button>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
