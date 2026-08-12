@@ -19,9 +19,9 @@ Open either `.nlogo` file in NetLogo 6.4 or later, press **setup**, then **go**.
 One tick is one month; one patch is one square kilometre; all energy is in
 kilocalories. `go 100 yr` runs 1200 ticks without redrawing.
 
-Four BehaviorSpace experiments ship with each model:
-`mating-system-comparison`, `drought-robustness`, `isolate-bachelor-risk` and
-`no-band-sharing`.
+Five BehaviorSpace experiments ship with each model:
+`mating-system-comparison`, `drought-robustness`, `isolate-bachelor-risk`,
+`wealth-compounding-sweep` and `no-band-sharing`.
 
 ## How the two files stay honest
 
@@ -142,55 +142,57 @@ that implements the same rules (see *Honest limitations* below).
 
 | Metric | Monogamy | Polygyny | Change |
 |---|---:|---:|---:|
-| Mean population | 440 | 459 | +4.2% |
-| Minimum population reached | 300 | 315 | +4.9% |
-| Mean nutritional condition | 0.88 | 0.86 | −2.0% |
-| Under-5 deaths per 1000 births | 433 | 434 | +0.2% |
-| **% adult men unmarried** | **43.5%** | **57.0%** | **+30.9%** |
-| Mean lifetime offspring per man | 5.99 | 6.33 | +5.6% |
-| **Variance in male offspring** | **5.1** | **20.0** | **+289%** |
-| **% men who father no children** | **3.3%** | **11.9%** | **+257%** |
-| Effective population size Ne | 164 | 149 | −9.3% |
-| Ne / N | 0.37 | 0.32 | −12.4% |
-| Surviving mtDNA lineages | 15.0 | 15.2 | +1.1% |
-| **Surviving Y lineages** | **22.0** | **17.2** | **−22.0%** |
-| **Mean foraging efficiency** | **1.011** | **1.038** | **+2.6%** |
+| Mean population | 445 | 369 | −17.0% |
+| Minimum population reached | 297 | 253 | −14.7% |
+| Mean nutritional condition | 0.88 | 0.87 | −0.6% |
+| Under-5 deaths per 1000 births | 425 | 439 | +3.3% |
+| **% adult men unmarried** | **40.2%** | **75.5%** | **+88%** |
+| Wives per married man | 1.00 | 2.36 | +136% |
+| Married men with 2+ wives | 0% | 62% | — |
+| Most wives held by one man | 1.0 | 6.3 | +527% |
+| Mean lifetime offspring per man | 5.64 | 5.30 | −6.0% |
+| **Variance in male offspring** | **8.4** | **82.1** | **+875%** |
+| **% men who father no children** | **8.4%** | **53.1%** | **+530%** |
+| **Effective population size Ne** | **170** | **83** | **−51.0%** |
+| Ne / N | 0.38 | 0.23 | −40.1% |
+| Surviving mtDNA lineages | 15.2 | 12.3 | −18.7% |
+| **Surviving Y lineages** | **28.7** | **17.5** | **−39.0%** |
+| Mean foraging efficiency | 1.000 | 1.012 | +1.2% |
 
 Read across the table, three things stand out.
 
-**Demographically the two are a wash.** Population, minimum population and
-child mortality are indistinguishable. The dilution of paternal investment
-across co-wives is real, but band-wide food sharing absorbs it — the buffer
-that every forager society actually has. Turn sharing off
-(`band-sharing = 0`, or the `no-band-sharing` experiment) and this stops being
-true.
+**Polygyny is no longer demographically free.** At the weak levels of polygyny
+an earlier parameterisation produced — 1.3 wives per married man — population
+and child mortality were indistinguishable between the two systems, because
+band-wide food sharing absorbed the dilution of paternal investment. Push it to
+2.4 wives and that buffer is overwhelmed: the population runs 17% smaller and
+under-5 mortality is 3% higher. Three quarters of adult men are supporting a
+food supply whose reproductive benefit accrues to someone else.
 
-**The difference is entirely in who reproduces.** Under polygyny the share of
-men who never marry rises by half, the share who die childless nearly
-quadruples, and the variance in male reproductive success rises almost
-four-fold. Same number of people, radically different distribution of ancestry.
+**More than half of all men are evolutionary dead ends.** 53% father no
+children, against 8% under monogamy, and the variance in male reproductive
+success is nearly ten times higher. This is the same number of people
+distributing their ancestry through a far narrower channel.
 
-**That shows up in the genome asymmetrically.** Maternal lineages are
-untouched — 15.0 versus 15.2, noise. Paternal lineages fall 22%. Polygyny
-prunes the Y chromosome and leaves mitochondrial DNA alone, which is the
-signature actually observed in human population-genetic data after the
-Neolithic.
-
-
+**That channel shows in the genome, asymmetrically.** Effective population size
+halves. Paternal lineages fall 39%, maternal lineages 19% — and the maternal
+loss is mostly just the smaller population, whereas the paternal loss is skew
+on top of that. Polygyny prunes the Y chromosome roughly twice as hard as the
+mitochondria, which is the signature actually observed in human
+population-genetic data after the Neolithic.
 
 ## Two findings worth pulling out
 
-**1. Polygyny trades genetic diversity for speed of adaptation.**
-Concentrating reproduction in few men cuts effective population size by 12% and
-strips 22% of paternal lineages, while leaving maternal lineages untouched. But
-the same skew makes selection on male traits intense: the heritable foraging
-trait ends up 2.6% higher under polygyny, and it climbs faster throughout the
-run. That is the trade-off in one line — **polygyny adapts quicker and
-monogamy keeps more of the variation it will need for the next problem.**
-Which is "better" depends entirely on whether the environment ahead rewards
-fast optimisation to current conditions or retained diversity against future
-ones, and the model cannot settle that for you. That is the honest answer to
-the question these models were built to ask.
+**1. The adaptation gain does not scale, but the costs do.**
+Intense selection on males is polygyny's one advantage in this model: the
+heritable foraging trait ends up higher under polygyny, so the population
+optimises faster. But that gain is small and it stays small — about 1% — while
+the costs grow steeply as polygyny intensifies. Going from 1.3 to 2.4 wives per
+married man roughly doubled the Ne penalty (12% to 51%) and turned a neutral
+population effect into a 17% shortfall, while the adaptation advantage actually
+*shrank* slightly. So the honest answer to which direction was better is that
+**mild polygyny is close to a free lunch and strong polygyny is not**. There is
+a defensible case for a little skew; there is not much of one for a lot.
 
 **2. Whether polygyny happens at all depends on who controls the marriage.**
 The `co-wife-penalty` slider spans two ways marriages actually get made. At 1.0
