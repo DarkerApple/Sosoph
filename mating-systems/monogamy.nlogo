@@ -670,18 +670,31 @@ end
 ;; Bridewealth passes to surviving sons. This is what lets advantage compound
 ;; across generations in the societies where polygyny is common, and it applies
 ;; identically in both models.
+;; Splitting an estate between all sons dilutes it every generation and keeps
+;; wealth flat. Primogeniture concentrates it instead, which is how strongly
+;; polygynous societies sustain a class of men rich enough to marry many wives.
 to bequeath
   if not male? or wealth <= 0 [ stop ]
   let heirs folk with [ male? and father-was = myself ]
-  if any? heirs [
-    let each wealth * wealth-inheritance / (count heirs)
-    ask heirs [ set wealth min (list (tee * max-wealth-days) (wealth + each)) ]
-  ]
+  if not any? heirs [ stop ]
+  if primogeniture? [ set heirs (turtle-set max-one-of heirs [ age-months ]) ]
+  let each wealth * wealth-inheritance / (count heirs)
+  ask heirs [ set wealth min (list (tee * max-wealth-days) (wealth + each)) ]
 end
 
+;; Herds breed. Where wealth is livestock rather than stored food it compounds,
+;; so a man with a large herd gains more each year than a man with a small one.
+;; That multiplicative growth is what turns a roughly equal society into a very
+;; unequal one, and it is why the strongly polygynous societies on record are
+;; pastoralists and farmers rather than foragers -- you cannot accumulate a herd
+;; of wild tubers. Set wealth-growth to 0 for a pure forager economy, and note
+;; that pushing it too high makes everyone hit the ceiling and *reduces*
+;; inequality again.
 to advance-age
   ask folk [
-    set wealth wealth * (1 - wealth-decay)
+    set wealth wealth * (1 + wealth-growth - wealth-decay)
+    let ceiling tee * max-wealth-days
+    if wealth > ceiling [ set wealth ceiling ]
     set age-months age-months + 1
     set widowed-months widowed-months + 1
   ]
@@ -715,6 +728,11 @@ end
 to-report mean-wives-per-married-man
   if married-males = 0 [ report 0 ]
   report (count folk with [ not male? and any? my-marriages ]) / married-males
+end
+
+to-report max-wives-held
+  if not any? folk with [ male? ] [ report 0 ]
+  report max [ count my-marriages ] of folk with [ male? ]
 end
 
 to-report mean-condition
@@ -1385,10 +1403,10 @@ SLIDER
 1279
 max-wealth-days
 max-wealth-days
-100
-2500
-1200
-50
+500
+40000
+20000
+500
 1
 days
 HORIZONTAL
@@ -1402,7 +1420,7 @@ wealth-decay
 wealth-decay
 0
 0.1
-0.01
+0.005
 0.005
 1
 per month
@@ -1413,14 +1431,14 @@ SLIDER
 1318
 345
 1351
-wealth-inheritance
-wealth-inheritance
+wealth-growth
+wealth-growth
 0
+0.06
+0.01
+0.005
 1
-0.5
-0.05
-1
-to sons
+per month
 HORIZONTAL
 
 SLIDER
@@ -1428,6 +1446,21 @@ SLIDER
 1354
 345
 1387
+wealth-inheritance
+wealth-inheritance
+0
+1
+0.7
+0.05
+1
+to sons
+HORIZONTAL
+
+SLIDER
+10
+1390
+345
+1423
 co-wife-penalty
 co-wife-penalty
 0
@@ -1440,9 +1473,9 @@ HORIZONTAL
 
 SLIDER
 10
-1390
+1426
 345
-1423
+1459
 landscape-heterogeneity
 landscape-heterogeneity
 0
@@ -1455,9 +1488,9 @@ HORIZONTAL
 
 SLIDER
 10
-1426
+1462
 345
-1459
+1495
 remarriage-delay
 remarriage-delay
 0
@@ -1470,9 +1503,9 @@ HORIZONTAL
 
 SLIDER
 10
-1462
+1498
 345
-1495
+1531
 mate-search-radius
 mate-search-radius
 3
@@ -1485,9 +1518,9 @@ HORIZONTAL
 
 SLIDER
 10
-1498
+1534
 345
-1531
+1567
 band-sharing
 band-sharing
 0
@@ -1500,9 +1533,9 @@ HORIZONTAL
 
 SLIDER
 10
-1534
+1570
 345
-1567
+1603
 bachelor-risk
 bachelor-risk
 1
@@ -1515,14 +1548,14 @@ HORIZONTAL
 
 SLIDER
 10
-1570
+1606
 345
-1603
+1639
 max-wives
 max-wives
 1
-10
-6
+20
+12
 1
 1
 wives
@@ -1530,9 +1563,9 @@ HORIZONTAL
 
 SLIDER
 10
-1606
+1642
 345
-1639
+1675
 mutation-sd
 mutation-sd
 0
@@ -1545,9 +1578,9 @@ HORIZONTAL
 
 SLIDER
 10
-1642
+1678
 345
-1675
+1711
 efficiency-min
 efficiency-min
 0.1
@@ -1560,9 +1593,9 @@ HORIZONTAL
 
 SLIDER
 10
-1678
+1714
 345
-1711
+1747
 efficiency-max
 efficiency-max
 1
@@ -1575,9 +1608,9 @@ HORIZONTAL
 
 SLIDER
 10
-1714
+1750
 345
-1747
+1783
 siler-a1
 siler-a1
 0
@@ -1590,9 +1623,9 @@ HORIZONTAL
 
 SLIDER
 10
-1750
+1786
 345
-1783
+1819
 siler-b1
 siler-b1
 0.5
@@ -1605,9 +1638,9 @@ HORIZONTAL
 
 SLIDER
 10
-1786
+1822
 345
-1819
+1855
 siler-a2
 siler-a2
 0
@@ -1620,9 +1653,9 @@ HORIZONTAL
 
 SLIDER
 10
-1822
+1858
 345
-1855
+1891
 siler-a3
 siler-a3
 0
@@ -1635,9 +1668,9 @@ HORIZONTAL
 
 SLIDER
 10
-1858
+1894
 345
-1891
+1927
 siler-b3
 siler-b3
 0.05
@@ -1647,6 +1680,17 @@ siler-b3
 1
 NIL
 HORIZONTAL
+
+SWITCH
+10
+1930
+345
+1963
+primogeniture?
+primogeniture?
+0
+1
+-1000
 
 MONITOR
 895
@@ -1730,8 +1774,8 @@ MONITOR
 360
 1070
 407
-mtDNA lineages
-mt-lineages-left
+most wives held
+max-wives-held
 3
 1
 11
@@ -1741,8 +1785,8 @@ MONITOR
 410
 1070
 457
-Y lineages
-y-lineages-left
+mtDNA lineages
+mt-lineages-left
 3
 1
 11
@@ -1752,6 +1796,17 @@ MONITOR
 460
 1070
 507
+Y lineages
+y-lineages-left
+3
+1
+11
+
+MONITOR
+895
+510
+1070
+557
 mean efficiency
 mean-efficiency
 3
@@ -2006,6 +2061,11 @@ descendants.
 
 ## THINGS TO TRY
 
+Set `wealth-growth` to 0 in the polygyny model. Polygyny very nearly vanishes:
+without compounding wealth there is no inequality for women to sort on, and a
+permissive marriage rule alone is not enough. Then sweep it upwards and watch
+polygyny peak and fall away again as everyone hits the ceiling.
+
 Set `bachelor-risk` to 1 to remove the male-male competition premium and see
 how much of the difference survives without it.
 
@@ -2096,6 +2156,7 @@ repeat 1200 [ go ]
     <metric>mean-condition</metric>
     <metric>pct-bachelors</metric>
     <metric>mean-wives-per-married-man</metric>
+    <metric>max-wives-held</metric>
     <metric>child-mortality-per-1000</metric>
     <metric>mean-male-rs</metric>
     <metric>variance-male-rs</metric>
@@ -2129,6 +2190,17 @@ repeat 1200 [ go ]
       <value value="1"/>
       <value value="1.35"/>
     </enumeratedValueSet>
+  </experiment>
+  <experiment name="wealth-compounding-sweep" repetitions="10" runMetricsEveryStep="false">
+    <setup>setup</setup>
+    <go>go</go>
+    <timeLimit steps="4800"/>
+    <metric>mean-wives-per-married-man</metric>
+    <metric>max-wives-held</metric>
+    <metric>pct-bachelors</metric>
+    <metric>y-lineages-left</metric>
+    <metric>ne-over-n</metric>
+    <steppedValueSet variable="wealth-growth" first="0" step="0.01" last="0.03"/>
   </experiment>
   <experiment name="no-band-sharing" repetitions="10" runMetricsEveryStep="false">
     <setup>setup</setup>

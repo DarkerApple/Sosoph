@@ -31,6 +31,7 @@ in-radius neighbors patch-here patch-at move-to setxy face forward fd back
 die hatch create-turtles clear-all reset-ticks tick ticks stop
 scale-color true false nl print show word is-number? is-string?
 turtle patch link both-ends other-end end1 end2 link-neighbors my-links
+turtle-set patch-set link-set no-turtles no-patches
 plot plotxy set-current-plot histogram
 globals patches-own turtles-own breed-own extensions
 directed-link-breed undirected-link-breed folk-own camps-own
@@ -89,8 +90,10 @@ def check(path):
         defined |= set(block[1].split())
     # sliders and other interface widgets define globals too
     iface = secs[1]
-    for m in re.finditer(r"^SLIDER\n(?:.*\n){4}([\w?-]+)\n", iface, re.M):
-        defined.add(m.group(1))
+    # sliders, switches and choosers all define a global
+    for kind in ("SLIDER", "SWITCH", "CHOOSER", "INPUTBOX"):
+        for m in re.finditer(rf"^{kind}\n(?:.*\n){{4}}([\w?-]+)\n", iface, re.M):
+            defined.add(m.group(1))
     # local variables
     defined |= set(re.findall(r"\blet\s+([\w?-]+)", code))
     # anonymous-procedure arguments:  [ x -> ... ]  and  [ [a b] -> ... ]

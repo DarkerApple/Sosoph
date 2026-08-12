@@ -691,18 +691,31 @@ end
 ;; Bridewealth passes to surviving sons. This is what lets advantage compound
 ;; across generations in the societies where polygyny is common, and it applies
 ;; identically in both models.
+;; Splitting an estate between all sons dilutes it every generation and keeps
+;; wealth flat. Primogeniture concentrates it instead, which is how strongly
+;; polygynous societies sustain a class of men rich enough to marry many wives.
 to bequeath
   if not male? or wealth <= 0 [ stop ]
   let heirs folk with [ male? and father-was = myself ]
-  if any? heirs [
-    let each wealth * wealth-inheritance / (count heirs)
-    ask heirs [ set wealth min (list (tee * max-wealth-days) (wealth + each)) ]
-  ]
+  if not any? heirs [ stop ]
+  if primogeniture? [ set heirs (turtle-set max-one-of heirs [ age-months ]) ]
+  let each wealth * wealth-inheritance / (count heirs)
+  ask heirs [ set wealth min (list (tee * max-wealth-days) (wealth + each)) ]
 end
 
+;; Herds breed. Where wealth is livestock rather than stored food it compounds,
+;; so a man with a large herd gains more each year than a man with a small one.
+;; That multiplicative growth is what turns a roughly equal society into a very
+;; unequal one, and it is why the strongly polygynous societies on record are
+;; pastoralists and farmers rather than foragers -- you cannot accumulate a herd
+;; of wild tubers. Set wealth-growth to 0 for a pure forager economy, and note
+;; that pushing it too high makes everyone hit the ceiling and *reduces*
+;; inequality again.
 to advance-age
   ask folk [
-    set wealth wealth * (1 - wealth-decay)
+    set wealth wealth * (1 + wealth-growth - wealth-decay)
+    let ceiling tee * max-wealth-days
+    if wealth > ceiling [ set wealth ceiling ]
     set age-months age-months + 1
     set widowed-months widowed-months + 1
   ]
@@ -736,6 +749,11 @@ end
 to-report mean-wives-per-married-man
   if married-males = 0 [ report 0 ]
   report (count folk with [ not male? and any? my-marriages ]) / married-males
+end
+
+to-report max-wives-held
+  if not any? folk with [ male? ] [ report 0 ]
+  report max [ count my-marriages ] of folk with [ male? ]
 end
 
 to-report mean-condition
@@ -864,16 +882,17 @@ SLIDERS = [
     ("male-marriage-age", 14, 1, 30, 18, "years"),
     ("female-marriage-age", 13, 1, 30, 16, "years"),
     ("bride-price", 0, 10000, 600000, 250000, "kcal"),
-    ("max-wealth-days", 100, 50, 2500, 1200, "days"),
-    ("wealth-decay", 0, 0.005, 0.1, 0.01, "per month"),
-    ("wealth-inheritance", 0, 0.05, 1, 0.5, "to sons"),
+    ("max-wealth-days", 500, 500, 40000, 20000, "days"),
+    ("wealth-decay", 0, 0.005, 0.1, 0.005, "per month"),
+    ("wealth-growth", 0, 0.005, 0.06, 0.01, "per month"),
+    ("wealth-inheritance", 0, 0.05, 1, 0.7, "to sons"),
     ("co-wife-penalty", 0, 0.05, 1, 0.0, "0=auction 1=Orians"),
     ("landscape-heterogeneity", 0, 0.05, 1.5, 0.75, "sd of richness"),
     ("remarriage-delay", 0, 1, 36, 12, "months"),
     ("mate-search-radius", 3, 1, 30, 20, "km"),
     ("band-sharing", 0, 0.05, 1, 0.45, "fraction"),
     ("bachelor-risk", 1, 0.05, 2.5, 1.35, "hazard mult"),
-    ("max-wives", 1, 1, 10, 6, "wives"),
+    ("max-wives", 1, 1, 20, 12, "wives"),
     ("mutation-sd", 0, 0.005, 0.1, 0.02, "sd"),
     ("efficiency-min", 0.1, 0.05, 1, 0.5, "x"),
     ("efficiency-max", 1, 0.05, 3, 2.0, "x"),
@@ -884,6 +903,11 @@ SLIDERS = [
     ("siler-b3", 0.05, 0.0005, 0.2, 0.1075, "NIL"),
 ]
 
+# name, default-on?  (NetLogo stores a switch as 0 for on, 1 for off)
+SWITCHES = [
+    ("primogeniture?", True),
+]
+
 MONITORS = [
     ("population", "population"),
     ("year", "year"),
@@ -892,6 +916,7 @@ MONITORS = [
     ("mean condition", "mean-condition"),
     ("under-5 deaths /1000", "child-mortality-per-1000"),
     ("Ne / N", "ne-over-n"),
+    ("most wives held", "max-wives-held"),
     ("mtDNA lineages", "mt-lineages-left"),
     ("Y lineages", "y-lineages-left"),
     ("mean efficiency", "mean-efficiency"),
@@ -958,6 +983,12 @@ def build_interface():
         w.append("\n".join([
             "SLIDER", "10", str(y), "345", str(y + 33), name, name,
             num(lo), num(hi), num(val), num(inc), "1", units, "HORIZONTAL"]))
+        y += 36
+
+    for name, on in SWITCHES:
+        w.append("\n".join([
+            "SWITCH", "10", str(y), "345", str(y + 33), name, name,
+            "0" if on else "1", "1", "-1000"]))
         y += 36
 
     mx, my = 895, 10
@@ -1081,6 +1112,11 @@ descendants.
 
 ## THINGS TO TRY
 
+Set `wealth-growth` to 0 in the polygyny model. Polygyny very nearly vanishes:
+without compounding wealth there is no inequality for women to sort on, and a
+permissive marriage rule alone is not enough. Then sweep it upwards and watch
+polygyny peak and fall away again as everyone hits the ceiling.
+
 Set `bachelor-risk` to 1 to remove the male-male competition premium and see
 how much of the difference survives without it.
 
@@ -1177,6 +1213,7 @@ EXPERIMENTS = '''<experiments>
     <metric>mean-condition</metric>
     <metric>pct-bachelors</metric>
     <metric>mean-wives-per-married-man</metric>
+    <metric>max-wives-held</metric>
     <metric>child-mortality-per-1000</metric>
     <metric>mean-male-rs</metric>
     <metric>variance-male-rs</metric>
@@ -1210,6 +1247,17 @@ EXPERIMENTS = '''<experiments>
       <value value="1"/>
       <value value="1.35"/>
     </enumeratedValueSet>
+  </experiment>
+  <experiment name="wealth-compounding-sweep" repetitions="10" runMetricsEveryStep="false">
+    <setup>setup</setup>
+    <go>go</go>
+    <timeLimit steps="4800"/>
+    <metric>mean-wives-per-married-man</metric>
+    <metric>max-wives-held</metric>
+    <metric>pct-bachelors</metric>
+    <metric>y-lineages-left</metric>
+    <metric>ne-over-n</metric>
+    <steppedValueSet variable="wealth-growth" first="0" step="0.01" last="0.03"/>
   </experiment>
   <experiment name="no-band-sharing" repetitions="10" runMetricsEveryStep="false">
     <setup>setup</setup>

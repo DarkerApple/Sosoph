@@ -89,9 +89,17 @@ energy budget, which is what makes closely spaced births costly.
 models. Women rank suitors by expected provisioning, discounted by existing
 wives through `co-wife-penalty` — see the finding about it below.
 
+**Wealth.** Where `wealth-growth` is above zero, accumulated wealth compounds:
+herds breed, so a man with a large herd gains more each year than a man with a
+small one. This turns out to be the engine of the entire result. Food
+acquisition is capped by physical capability, so without compounding every
+prime-age man earns about the same, and a society of near-equals produces
+almost no polygyny however permissive its marriage rule is.
+
 **Inheritance.** A maternally inherited marker and a paternally inherited one
 stand in for mitochondrial DNA and the Y chromosome. Bridewealth passes to
-surviving sons, which is what lets advantage compound across generations.
+surviving sons; with `primogeniture?` on it goes to the eldest alone, which
+concentrates estates rather than diluting them each generation.
 
 ## Calibration
 

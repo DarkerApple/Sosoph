@@ -124,10 +124,17 @@ DROUGHT_MIN_MONTHS, DROUGHT_MAX_MONTHS = 6, 24
 MALE_MARRIAGE_AGE = 18.0
 FEMALE_MARRIAGE_AGE = 16.0
 BRIDE_PRICE = 250_000.0         # kcal-equivalent of exchangeable surplus
-MAX_WEALTH_DAYS = 1200          # ceiling on storable / exchangeable surplus
-WEALTH_DECAY = 0.01            # monthly loss: food spoils, obligations are called
+MAX_WEALTH_DAYS = 20000         # ceiling on storable / exchangeable surplus
+WEALTH_DECAY = 0.005           # monthly loss: food spoils, obligations are called
+# Herds breed. Where wealth is livestock rather than stored food it compounds,
+# so a man with a large herd gains more each year than a man with a small one.
+# That multiplicative growth is what turns a roughly equal society into a very
+# unequal one, and it is why the strongly polygynous societies on record are
+# pastoralists and farmers rather than foragers: you cannot accumulate a herd
+# of wild tubers. Set to 0 for a pure forager economy.
+WEALTH_GROWTH = 0.01           # monthly compounding rate on held wealth
 REMARRIAGE_DELAY_MONTHS = 12
-MAX_WIVES = 6
+MAX_WIVES = 12
 # How strongly an existing wife devalues a suitor in the marriage market.
 # 1.0 is the strict Orians polygyny threshold, in which a woman weighs a man's
 # resources divided equally among his co-wives and so almost never accepts a
@@ -144,7 +151,12 @@ BAND_SHARING = 0.45            # fraction of surplus shared beyond the household
 # apply identically in the two models; they are what makes polygyny possible
 # rather than what makes it costly.
 LANDSCAPE_HETEROGENEITY = 0.75  # sd of the multiplicative richness field
-WEALTH_INHERITANCE = 0.5        # share of a man's wealth passing to his sons
+WEALTH_INHERITANCE = 0.7        # share of a man's wealth passing to his sons
+# Splitting an estate between all sons dilutes it every generation and keeps
+# wealth flat. Primogeniture concentrates it instead, which is exactly how
+# strongly polygynous societies sustain a class of men rich enough to marry
+# many wives.
+PRIMOGENITURE = True
 BACHELOR_RISK = 1.35           # hazard multiplier on SILER_A2 for unmarried
 BACHELOR_RISK_AGE = (18.0, 40.0)   # males within this age band
 
@@ -785,6 +797,8 @@ class World:
                     sons_of.setdefault(q.father.uid, []).append(q)
             for m in dead_men:
                 heirs = sons_of.get(m.uid, [])
+                if heirs and PRIMOGENITURE:
+                    heirs = [max(heirs, key=lambda q: q.age_m)]
                 if heirs:
                     each = m.wealth * WEALTH_INHERITANCE / len(heirs)
                     for h in heirs:
@@ -804,7 +818,10 @@ class World:
 
     def _age(self):
         for p in self.people:
-            p.wealth *= (1.0 - WEALTH_DECAY)
+            p.wealth *= (1.0 + WEALTH_GROWTH - WEALTH_DECAY)
+            cap = maintenance_kcal_day(p.age, p.male) * MAX_WEALTH_DAYS
+            if p.wealth > cap:
+                p.wealth = cap
             p.age_m += 1
             p.widowed_m += 1
             if p.age < 5:
@@ -825,6 +842,11 @@ class World:
         # use standing RS of males past 45 as the completed-fertility proxy
         old_m = [p for p in self.people if p.male and p.age >= 45]
         rs = [p.n_offspring for p in old_m] or [0]
+        wives_per: dict[int, int] = {}
+        for p in self.people:
+            if not p.male and p.husband is not None and p.husband.alive:
+                wives_per[p.husband.uid] = wives_per.get(p.husband.uid, 0) + 1
+        counts = list(wives_per.values())
         nm, nf = max(1, len(married_m)), max(1, len(adults_f))
         ne = 4 * nm * nf / (nm + nf)
         return {
@@ -832,6 +854,10 @@ class World:
             "mean_condition": float(np.mean([min(1.0, p.energy / p.reserve_cap)
                                              for p in self.people])),
             "pct_bachelors": 100.0 * (1 - len(married_m) / max(1, len(adults_m))),
+            "wives_per_married_man": float(np.mean(counts)) if counts else 0.0,
+            "pct_married_men_polygynous": (
+                100.0 * sum(1 for c in counts if c > 1) / len(counts) if counts else 0.0),
+            "max_wives_held": float(max(counts)) if counts else 0.0,
             "male_rs_var": float(np.var(rs)),
             "male_rs_mean": float(np.mean(rs)),
             "pct_males_zero_rs": 100.0 * sum(1 for r in rs if r == 0) / len(rs),
@@ -902,6 +928,9 @@ def main():
         ("mean_condition", "mean nutritional condition"),
         ("u5_mortality", "under-5 deaths per 1000 births"),
         ("pct_bachelors", "% adult males unmarried"),
+        ("wives_per_married_man", "wives per married man"),
+        ("pct_married_men_polygynous", "% married men with 2+ wives"),
+        ("max_wives_held", "most wives held by one man"),
         ("male_rs_mean", "mean male lifetime offspring"),
         ("male_rs_var", "variance in male offspring"),
         ("pct_males_zero_rs", "% males with zero offspring"),
