@@ -281,6 +281,20 @@ to try-breed                          ;; female procedure
     set-appearance
     set births-this-phase births-this-phase + 1
   ]
+
+  ;; --- AIDS can be contracted through the act of reproducing ---
+  ;; Only the father can catch it, and only if he is mono. Two independent
+  ;; rolls: a baseline risk per reproduction, plus a much higher risk if the
+  ;; mother is already a carrier.
+  if aids-on? [
+    let mom-carrier? carrier?
+    ask dad [
+      if mono? and not infected? [
+        if random-float 100 < aids-breeding-chance [ infect ]
+        if mom-carrier? and random-float 100 < aids-transmission [ infect ]
+      ]
+    ]
+  ]
 end
 
 to assign-male-child [ dad-type dad-monoclass? dad-infected? ]
@@ -705,7 +719,7 @@ weight-m2
 weight-m2
 0
 100
-35.0
+20.0
 1
 1
 %
@@ -1221,7 +1235,7 @@ tsunami-chance
 tsunami-chance
 0
 100
-3.0
+1.0
 1
 1
 %
@@ -1281,7 +1295,7 @@ tornado-chance
 tornado-chance
 0
 100
-4.0
+2.0
 1
 1
 %
@@ -1341,7 +1355,7 @@ diddy-chance
 diddy-chance
 0
 100
-7.0
+4.0
 1
 1
 %
@@ -1382,7 +1396,7 @@ thanos-chance
 thanos-chance
 0
 100
-4.0
+2.0
 1
 1
 %
@@ -1505,6 +1519,21 @@ SLIDER
 875
 600
 908
+aids-breeding-chance
+aids-breeding-chance
+0
+100
+3.0
+0.5
+1
+% per birth
+HORIZONTAL
+
+SLIDER
+405
+910
+600
+943
 aids-vertical
 aids-vertical
 0
@@ -1517,9 +1546,9 @@ HORIZONTAL
 
 SWITCH
 405
-910
+945
 600
-943
+978
 aids-carriers?
 aids-carriers?
 0
@@ -1528,9 +1557,9 @@ aids-carriers?
 
 SWITCH
 405
-945
+980
 600
-978
+1013
 aids-sterile?
 aids-sterile?
 0
@@ -1875,6 +1904,12 @@ Three transmission routes:
 
 - **Outbreak** - fires at `aids-chance` per phase (or in the scheduled
   rotation) and infects `aids-initial-infect`% of all healthy monos at once.
+- **Reproduction** - every time a mono father actually produces offspring he
+  rolls `aids-breeding-chance` to contract it. If the mother is already a
+  carrier he rolls again, this time at the much higher `aids-transmission`.
+  Because a mono bond lasts for life and breeds every phase, this risk
+  compounds: the more successfully a mono line reproduces, the more likely it
+  is to catch AIDS.
 - **Carriers** - with `aids-carriers?` on, the female bonded to an infected
   mono becomes a carrier. She is never infected herself, but if she outlives
   him and re-pairs with another mono, she infects him at `aids-transmission`.
@@ -1906,9 +1941,11 @@ To make it grow faster still: drop `mating-threshold` below zero, raise
 `fertility-bonus`, or raise `offspring-max`. `carrying-capacity` is the hard
 ceiling - raise it or set it to 0 to remove the cap entirely.
 
-Note that **2/3 Thanos is untouched** and is now by far the largest brake on
-the population: at the default 4% per phase it removes two thirds of every
-non-mono entity. Turn `thanos-chance` down if you want uninterrupted growth.
+All four catastrophe chances are now low enough that they punctuate a run
+rather than define it: tsunami 1%, tornado 2%, diddy 4%, Thanos 2% per phase.
+Thanos is still the single biggest event in the model - it removes two thirds
+of every non-mono entity whenever it lands - so raise or lower `thanos-chance`
+first if you want to change the overall shape of a run.
 
 ## WHAT TO WATCH
 
