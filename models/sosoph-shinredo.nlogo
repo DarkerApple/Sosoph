@@ -18,6 +18,8 @@ globals [
   tornado-count
   diddy-count
   thanos-count
+  aids-count            ;; number of AIDS outbreaks so far
+  aids-deaths           ;; cumulative deaths from AIDS
   mega-who              ;; who-number of the active mega-handsome (-1 = none)
   sched-index           ;; rotates trauma types in "scheduled" mode
 ]
@@ -35,6 +37,9 @@ turtles-own [
   locked-on             ;; female locked onto the mega-handsome this phase
   trauma-load           ;; inherited generational trauma (subtracts from shinredo)
   bred-this-phase?
+  infected?             ;; has AIDS -- only ever true for mono entities
+  carrier?              ;; non-mono partner who can pass AIDS to her next mono
+  infection-age         ;; phases lived since infection
 ]
 
 ;; ================= SETUP =================
@@ -45,6 +50,8 @@ to setup
   set mega-who -1
   set sched-index 0
   set collapse-deaths 0
+  set aids-count 0
+  set aids-deaths 0
   create-males   initial-males   [ init-male   setxy random-xcor random-ycor ]
   create-females initial-females [ init-female setxy random-xcor random-ycor ]
   ask turtles [ set age random 2 ]
@@ -63,6 +70,9 @@ to init-common
   set mega? false
   set handsome? false
   set bred-this-phase? false
+  set infected? false
+  set carrier? false
+  set infection-age 0
 end
 
 to init-male
@@ -149,6 +159,7 @@ to go
   ask turtles [ wander ]
   do-mating
   do-reproduction
+  progress-aids
   do-collapse
   do-aging
   enforce-capacity
@@ -180,12 +191,14 @@ end
 ;; ================= ATTRACTION & MATING =================
 
 to-report effective-shinredo          ;; turtle reporter
+  ;; AIDS collapses a mono's infinite shinredo down to a mortal number
+  if infected? [ report aids-crash-shinredo - trauma-load ]
   report shinredo - trauma-load
 end
 
 to-report collapsed?                  ;; turtle reporter -- the "shinredo floor" rule
-  if mono? [ report false ]           ;; mono is immune: infinite shinredo
   if mega? [ report false ]
+  if mono? and not infected? [ report false ]   ;; healthy mono is immune
   report effective-shinredo <= shinredo-floor
 end
 
@@ -221,6 +234,7 @@ to do-mating
       if random-float 1 < mate-probability best [
         set partner best
         ask best [ set partner myself ]
+        transmit-aids best
       ]
     ]
   ]
@@ -241,13 +255,16 @@ to try-breed                          ;; female procedure
   let dad partner
   if [ mega? ] of dad [ stop ]
   if [ collapsed? ] of dad [ stop ]
+  if aids-sterile? and [ infected? ] of dad [ stop ]   ;; AIDS blocks reproduction
 
   set bred-this-phase? true
   ask dad [ set bred-this-phase? true ]
 
   let litter offspring-min + random (max (list 1 (offspring-max - offspring-min + 1)))
+  if random-float 100 < fertility-bonus [ set litter litter + 1 ]
   let dad-type       [ sex-type ] of dad
   let dad-monoclass? [ mono-class? ] of dad
+  let dad-infected?  [ infected? ] of dad
   let dad-trauma     [ trauma-load ] of dad
   let mom-type       sex-type
   let mom-trauma     trauma-load
@@ -256,7 +273,7 @@ to try-breed                          ;; female procedure
     init-common
     set trauma-load ((mom-trauma + dad-trauma) / 2) * (trauma-heritability / 100)
     ifelse random-float 100 < male-birth-pct
-      [ assign-male-child   dad-type dad-monoclass? ]
+      [ assign-male-child   dad-type dad-monoclass? dad-infected? ]
       [ assign-female-child mom-type ]
     set lifespan roll-lifespan
     rt random 360
@@ -266,20 +283,28 @@ to try-breed                          ;; female procedure
   ]
 end
 
-to assign-male-child [ dad-type dad-monoclass? ]
+to assign-male-child [ dad-type dad-monoclass? dad-infected? ]
   ;; mono-class fathers push their line toward mono
-  if dad-monoclass? and random-float 100 < mono-class-heritability [ become-minf stop ]
-  ifelse random-float 100 < inherit-fidelity [
-    if dad-type = "M1" [ become-m1 ]
-    if dad-type = "M2" or dad-type = "MEGA" [ become-m2 ]
-    if dad-type = "MINF" [
-      ;; mono lines rarely breed true
-      ifelse random-float 100 < mono-birth-chance [ become-minf ] [ become-m2 ]
-    ]
+  ifelse dad-monoclass? and random-float 100 < mono-class-heritability [
+    become-minf
   ] [
-    random-male-type
+    ifelse random-float 100 < inherit-fidelity [
+      if dad-type = "M1" [ become-m1 ]
+      if dad-type = "M2" or dad-type = "MEGA" [ become-m2 ]
+      if dad-type = "MINF" [
+        ;; mono lines rarely breed true
+        ifelse random-float 100 < mono-birth-chance [ become-minf ] [ become-m2 ]
+      ]
+    ] [
+      random-male-type
+    ]
+    if random-float 100 < mutation-chance [ random-male-type ]
   ]
-  if random-float 100 < mutation-chance [ random-male-type ]
+  ;; vertical transmission: only a mono son can carry it
+  if aids-on? and mono? and dad-infected? and random-float 100 < aids-vertical [
+    set infected? true
+    set infection-age 0
+  ]
 end
 
 to assign-female-child [ mom-type ]
@@ -309,7 +334,7 @@ to run-trauma
   if not trauma-on? [ stop ]
   ifelse trauma-mode = "scheduled" [
     if ticks > 0 and ticks mod trauma-interval = 0 [
-      fire-event item (sched-index mod 4) [ "tsunami" "tornado" "diddy" "thanos" ]
+      fire-event item (sched-index mod 5) [ "tsunami" "tornado" "diddy" "thanos" "aids" ]
       set sched-index sched-index + 1
     ]
   ] [
@@ -317,6 +342,7 @@ to run-trauma
     if random-float 100 < tornado-chance [ fire-event "tornado" ]
     if random-float 100 < diddy-chance   [ fire-event "diddy"   ]
     if random-float 100 < thanos-chance  [ fire-event "thanos"  ]
+    if aids-on? and random-float 100 < aids-chance [ fire-event "aids" ]
   ]
 end
 
@@ -325,6 +351,7 @@ to fire-event [ ev ]
   if ev = "tornado" [ tornado-event ]
   if ev = "diddy"   [ diddy-event   ]
   if ev = "thanos"  [ thanos-event  ]
+  if ev = "aids"    [ aids-event    ]
 end
 
 to log-event [ txt ]
@@ -402,6 +429,54 @@ to thanos-event
   log-event "2/3 THANOS"
 end
 
+;; --- 5. AIDS: a persistent disease that can ONLY infect mono entities.
+;;        It is the counterweight to mono: it crashes their infinite shinredo
+;;        down to a mortal number, blocks reproduction, and kills on a timer. ---
+to aids-event
+  if not aids-on? [ stop ]
+  set aids-count aids-count + 1
+  let pool turtles with [ mono? and not infected? ]
+  if any? pool [
+    let n round (count pool * aids-initial-infect / 100)
+    if n < 1 [ set n 1 ]
+    set n min (list n (count pool))
+    ask n-of n pool [ infect ]
+  ]
+  log-event "AIDS OUTBREAK"
+end
+
+to infect                             ;; turtle procedure
+  if not mono? [ stop ]               ;; non-mono entities cannot be infected
+  if infected? [ stop ]
+  set infected? true
+  set infection-age 0
+  ;; his bonded female becomes a carrier who can pass it on to her next mono
+  if aids-carriers? and partner != nobody [
+    ask partner [ if not mono? [ set carrier? true ] ]
+  ]
+end
+
+to transmit-aids [ m ]                ;; female procedure, m = the male just paired with
+  if not aids-on? [ stop ]
+  ;; a carrier passes it to the next mono she bonds with
+  if carrier? and [ mono? and not infected? ] of m [
+    if random-float 100 < aids-transmission [ ask m [ infect ] ]
+  ]
+  ;; bonding with an infected mono makes her a carrier
+  if aids-carriers? and [ infected? ] of m [ set carrier? true ]
+end
+
+to progress-aids
+  if not aids-on? [ stop ]
+  ask turtles with [ infected? ] [
+    set infection-age infection-age + 1
+    if infection-age >= aids-duration [
+      set aids-deaths aids-deaths + 1
+      perish
+    ]
+  ]
+end
+
 to add-trauma [ amt ]
   set trauma-load trauma-load + amt
 end
@@ -458,6 +533,8 @@ to set-appearance
   if sex-type = "F-0.1" [ set color orange  set size 1.0  set shape "circle 2" ]
   if sex-type = "F-0.2" [ set color yellow  set size 1.0  set shape "circle 2" ]
   if mono-class? [ set shape "star" set size size + 0.6 ]
+  if carrier?    [ set shape "circle" ]
+  if infected?   [ set shape "x" set color lime ]
   if collapsed?  [ set color gray ]
 end
 
@@ -476,6 +553,18 @@ end
 
 to-report mono-class-count
   report count turtles with [ mono-class? ]
+end
+
+to-report infected-count
+  report count turtles with [ infected? ]
+end
+
+to-report carrier-count
+  report count turtles with [ carrier? ]
+end
+
+to-report mono-count
+  report count turtles with [ mono? ]
 end
 
 to-report pair-rate
@@ -751,7 +840,7 @@ offspring-max
 offspring-max
 1
 8
-3.0
+4.0
 1
 1
 NIL
@@ -766,7 +855,7 @@ carrying-capacity
 carrying-capacity
 0
 3000
-900.0
+1200.0
 50
 1
 NIL
@@ -781,7 +870,7 @@ move-speed
 move-speed
 0
 3
-0.7
+1.0
 0.1
 1
 NIL
@@ -796,10 +885,25 @@ mate-radius
 mate-radius
 1
 20
-5.0
+7.0
 1
 1
 NIL
+HORIZONTAL
+
+SLIDER
+5
+610
+200
+643
+fertility-bonus
+fertility-bonus
+0
+100
+35.0
+1
+1
+%
 HORIZONTAL
 
 SLIDER
@@ -886,7 +990,7 @@ mating-threshold
 mating-threshold
 -2
 5
-1.0
+0.0
 0.1
 1
 NIL
@@ -1102,7 +1206,7 @@ trauma-interval
 trauma-interval
 1
 20
-5.0
+7.0
 1
 1
 phases
@@ -1117,7 +1221,7 @@ tsunami-chance
 tsunami-chance
 0
 100
-8.0
+3.0
 1
 1
 %
@@ -1132,7 +1236,7 @@ tsunami-width
 tsunami-width
 1
 15
-5.0
+3.0
 1
 1
 NIL
@@ -1147,7 +1251,7 @@ tsunami-lethality
 tsunami-lethality
 0
 100
-65.0
+25.0
 1
 1
 %
@@ -1162,7 +1266,7 @@ tsunami-trauma
 tsunami-trauma
 0
 2
-0.15
+0.05
 0.05
 1
 NIL
@@ -1177,7 +1281,7 @@ tornado-chance
 tornado-chance
 0
 100
-10.0
+4.0
 1
 1
 %
@@ -1192,7 +1296,7 @@ tornado-radius
 tornado-radius
 1
 15
-6.0
+4.0
 1
 1
 NIL
@@ -1207,7 +1311,7 @@ tornado-lethality
 tornado-lethality
 0
 100
-50.0
+20.0
 1
 1
 %
@@ -1222,7 +1326,7 @@ tornado-trauma
 tornado-trauma
 0
 2
-0.1
+0.04
 0.05
 1
 NIL
@@ -1306,6 +1410,129 @@ SWITCH
 655
 collapse-is-fatal?
 collapse-is-fatal?
+0
+1
+-1000
+
+SWITCH
+405
+665
+600
+698
+aids-on?
+aids-on?
+0
+1
+-1000
+
+SLIDER
+405
+700
+600
+733
+aids-chance
+aids-chance
+0
+100
+6.0
+1
+1
+%
+HORIZONTAL
+
+SLIDER
+405
+735
+600
+768
+aids-initial-infect
+aids-initial-infect
+0
+100
+30.0
+1
+1
+% of monos
+HORIZONTAL
+
+SLIDER
+405
+770
+600
+803
+aids-duration
+aids-duration
+1
+10
+3.0
+1
+1
+phases
+HORIZONTAL
+
+SLIDER
+405
+805
+600
+838
+aids-crash-shinredo
+aids-crash-shinredo
+-2
+3
+0.3
+0.1
+1
+NIL
+HORIZONTAL
+
+SLIDER
+405
+840
+600
+873
+aids-transmission
+aids-transmission
+0
+100
+45.0
+1
+1
+%
+HORIZONTAL
+
+SLIDER
+405
+875
+600
+908
+aids-vertical
+aids-vertical
+0
+100
+20.0
+1
+1
+%
+HORIZONTAL
+
+SWITCH
+405
+910
+600
+943
+aids-carriers?
+aids-carriers?
+0
+1
+-1000
+
+SWITCH
+405
+945
+600
+978
+aids-sterile?
+aids-sterile?
 0
 1
 -1000
@@ -1453,11 +1680,55 @@ mean-eff-shinredo
 1
 11
 
+MONITOR
+610
+599
+700
+644
+mono (all)
+mono-count
+0
+1
+11
+
+MONITOR
+703
+599
+800
+644
+AIDS infected
+infected-count
+0
+1
+11
+
+MONITOR
+803
+599
+900
+644
+carriers
+carrier-count
+0
+1
+11
+
+MONITOR
+903
+599
+1047
+644
+AIDS deaths (total)
+aids-deaths
+0
+1
+11
+
 PLOT
 610
-600
+648
 1047
-790
+838
 population by type
 phase
 count
@@ -1476,12 +1747,13 @@ PENS
 "F-0.1" 1.0 0 -955883 true "" "plot count-type \"F-0.1\""
 "F-0.2" 1.0 0 -1184463 true "" "plot count-type \"F-0.2\""
 "monoclass" 1.0 0 -10899396 true "" "plot mono-class-count"
+"infected" 1.0 0 -13840069 true "" "plot infected-count"
 
 PLOT
 610
-793
+841
 1047
-943
+991
 shinredo & trauma
 phase
 value
@@ -1500,7 +1772,7 @@ PENS
 PLOT
 5
 685
-600
+400
 860
 births & deaths per phase
 phase
@@ -1558,14 +1830,17 @@ Female offspring inherit their mother's type but **drift downward**
 
 ## GENERATIONAL TRAUMA
 
-Four events. In `random` mode each rolls its own per-phase chance (several can
+Five events. In `random` mode each rolls its own per-phase chance (several can
 land in the same phase). In `scheduled` mode they rotate in order every
 `trauma-interval` phases.
 
+The two natural disasters are tuned to be survivable: they thin the population
+and leave a trauma scar, but they are no longer the main driver of extinction.
+
 1. **Tsunami** - a horizontal band sweeps the world, killing at
-   `tsunami-lethality`. Survivors take `tsunami-trauma`.
-2. **Tornado** - a vortex of `tornado-radius` kills, and throws survivors to
-   random locations.
+   `tsunami-lethality` (default 25%). Survivors take `tsunami-trauma`.
+2. **Tornado** - a vortex of `tornado-radius` kills at `tornado-lethality`
+   (default 20%), and throws survivors to random locations.
 3. **Godd Geonwoo (diddy)** - spawns a **mega-handsome** with overwhelming
    appeal. Every single (unpartnered) female locks onto him for that phase, and
    he **cannot reproduce** - so all of them waste the phase. He exists for
@@ -1576,8 +1851,42 @@ land in the same phase). In `scheduled` mode they rotate in order every
    appeal (`mono-class-bonus`), extra lifespan (`mono-class-lifespan-bonus`),
    and sons that inherit MINF at `mono-class-heritability`.
 
+5. **AIDS** - the only thing in the model that can touch mono. See below.
+
 Trauma is the through-line of the model: `trauma-load` passes to children at
 `trauma-heritability` and subtracts from shinredo permanently.
+
+## AIDS
+
+AIDS **only ever infects mono entities**. Nothing else in the model can carry
+it as a disease. It exists as the counterweight to mono, which is otherwise
+unbeatable: infinite shinredo, immune to the shinredo floor, and explicitly
+spared by the Thanos snap.
+
+An infected mono:
+
+- has its **infinite shinredo crashed** to `aids-crash-shinredo`, so it stops
+  outcompeting every other male and can now fall below the shinredo floor
+- **cannot reproduce** while `aids-sterile?` is on - but it still holds its
+  lifelong bond, so it takes a female out of the breeding pool with it
+- **dies** after `aids-duration` phases
+
+Three transmission routes:
+
+- **Outbreak** - fires at `aids-chance` per phase (or in the scheduled
+  rotation) and infects `aids-initial-infect`% of all healthy monos at once.
+- **Carriers** - with `aids-carriers?` on, the female bonded to an infected
+  mono becomes a carrier. She is never infected herself, but if she outlives
+  him and re-pairs with another mono, she infects him at `aids-transmission`.
+  This is how the disease crosses between mono lineages.
+- **Vertical** - a mono son of an infected father is born infected at
+  `aids-vertical`. Note this route only opens up when `aids-sterile?` is
+  **off**: a father who cannot reproduce at all obviously cannot pass it to a
+  son, so with the default settings outbreaks and carriers do all the work.
+
+Infected entities render as a lime **x**. Watch the `MINF` count and the
+`AIDS infected` monitor together: outbreaks carve the mono population down and
+briefly hand the field back to M1 and M2.
 
 ## THE SHINREDO FLOOR
 
@@ -1586,11 +1895,29 @@ below `shinredo-floor`, it **collapses**: it cannot reproduce, it renders gray,
 and if `collapse-is-fatal?` is on it dies at the end of the phase. Mono
 entities are immune.
 
+## FERTILITY
+
+The population is tuned to grow. `mating-threshold` sits at 0.0 so an ordinary
+M1 clears it easily, `mate-radius` and `move-speed` are high enough that
+females actually find partners, litters run 1-4, and `fertility-bonus` adds a
+further offspring to 35% of all births.
+
+To make it grow faster still: drop `mating-threshold` below zero, raise
+`fertility-bonus`, or raise `offspring-max`. `carrying-capacity` is the hard
+ceiling - raise it or set it to 0 to remove the cap entirely.
+
+Note that **2/3 Thanos is untouched** and is now by far the largest brake on
+the population: at the default 4% per phase it removes two thirds of every
+non-mono entity. Turn `thanos-chance` down if you want uninterrupted growth.
+
 ## WHAT TO WATCH
 
-- Set `trauma-mode` to `scheduled` with `trauma-interval` 5 to see all four
+- Set `trauma-mode` to `scheduled` with `trauma-interval` 7 to see all five
   events cycle in order.
-- Run two Thanos snaps in a row and the population converges to mono class.
+- Run two Thanos snaps in a row and the population converges to mono class -
+  then let one AIDS outbreak land and watch that dominance come apart.
+- Turn `aids-on?` off and mono ratchets upward forever. Turn it on and mono
+  oscillates instead.
 - Turn `trauma-heritability` to 0 and the population stabilises; turn it to 100
   and every lineage eventually hits the floor.
 - The diddy event is cheap in deaths but carves a visible notch out of the
@@ -1600,7 +1927,7 @@ entities are immune.
 
 blue = M1, cyan = M2 (handsome), violet star = MINF (mono),
 magenta star = mega-handsome, red = F0, orange = F-0.1, yellow = F-0.2,
-gray = collapsed, star shape = mono class.
+gray = collapsed, star shape = mono class, lime x = AIDS-infected.
 @#$#@#$#@
 default
 true
