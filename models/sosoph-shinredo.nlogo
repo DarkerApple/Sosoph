@@ -1,9 +1,18 @@
 ;; ==========================================================
-;;  SOSOPH :: SHINREDO REPRODUCTION MODEL
-;;  Male types : M1 (shinredo 1) | M2 (shinredo 2, handsome) | MINF (shinredo inf, mono)
-;;  Female types: F0 (0) | F-0.1 (-0.1) | F-0.2 (-0.2)
-;;  Generational trauma: Tsunami | Tornado | Godd Geonwoo (diddy) | 2/3 Thanos
-;;  Time unit = "phase" (1 tick). Entities normally live 2 phases.
+;;  SOSOPH :: TRUST REPRODUCTION MODEL
+;;
+;;  Male types
+;;    M1   trust 1.0 - 2.0, wants MANY partners, cheats, trust decays
+;;    M3   trust infinite, MONO: one partner for life, trust never decays
+;;  Female types
+;;    F0 (0) | F-0.1 (-0.1) | F-0.2 (-0.2)   -- their trust is the cheat cost
+;;
+;;  Life cycle (8 phases)
+;;    phase 1      child   cannot reproduce, must survive a mortality roll
+;;    phase 2-6    adult   can reproduce
+;;    phase 7-8    old     cannot reproduce
+;;
+;;  Trauma: Tsunami | Tornado | Godd Geonwoo (diddy) | 2/3 Thanos | AIDS
 ;; ==========================================================
 
 breed [ males male ]
@@ -13,33 +22,37 @@ globals [
   event-this-phase      ;; text log of what hit this phase
   births-this-phase
   deaths-this-phase
-  collapse-deaths       ;; deaths from shinredo collapse
+  cheats-this-phase
+  collapse-deaths       ;; deaths from trust collapse
+  child-deaths          ;; deaths from the child mortality roll
   tsunami-count
   tornado-count
   diddy-count
   thanos-count
-  aids-count            ;; number of AIDS outbreaks so far
-  aids-deaths           ;; cumulative deaths from AIDS
+  aids-count
+  aids-deaths
   mega-who              ;; who-number of the active mega-handsome (-1 = none)
   sched-index           ;; rotates trauma types in "scheduled" mode
 ]
 
 turtles-own [
-  shinredo              ;; base shinredo value
-  sex-type              ;; "M1" "M2" "MINF" "MEGA" "F0" "F-0.1" "F-0.2"
-  handsome?             ;; M2 attribute
-  mono?                 ;; MINF attribute
+  trust                 ;; males: 1-2 (M1) or infinite (M3). females: 0 / -0.1 / -0.2
+  sex-type              ;; "M1" "M3" "MEGA" "F0" "F-0.1" "F-0.2"
+  mono?                 ;; M3 attribute -- one partner for life
   mono-class?           ;; promoted by the Thanos snap
   mega?                 ;; the Godd Geonwoo spawn
-  age
+  age                   ;; phases already lived; life-phase = age + 1
   lifespan
-  partner               ;; mono bonds persist; binary bonds reset each phase
+  partner               ;; mono: lifelong bond. others: this phase's mate
+  partners-this-phase   ;; males: how many females taken this phase
   locked-on             ;; female locked onto the mega-handsome this phase
-  trauma-load           ;; inherited generational trauma (subtracts from shinredo)
+  trauma-load           ;; inherited generational trauma (subtracts from trust)
   bred-this-phase?
+  gestation             ;; phases of recovery left after giving birth
+  mortality-rolled?     ;; has this entity taken its child mortality roll yet
   infected?             ;; has AIDS -- only ever true for mono entities
   carrier?              ;; non-mono partner who can pass AIDS to her next mono
-  infection-age         ;; phases lived since infection
+  infection-age
 ]
 
 ;; ================= SETUP =================
@@ -50,11 +63,17 @@ to setup
   set mega-who -1
   set sched-index 0
   set collapse-deaths 0
+  set child-deaths 0
   set aids-count 0
   set aids-deaths 0
   create-males   initial-males   [ init-male   setxy random-xcor random-ycor ]
   create-females initial-females [ init-female setxy random-xcor random-ycor ]
-  ask turtles [ set age random 2 ]
+  ;; the starting population is already grown: adults, past their mortality roll
+  ask turtles [
+    set age child-until-phase + random (max (list 1 (adult-until-phase - child-until-phase)))
+    set mortality-rolled? true
+    set-appearance
+  ]
   ask patches [ set pcolor black ]
   reset-ticks
 end
@@ -63,13 +82,15 @@ to init-common
   set age 0
   set lifespan roll-lifespan
   set partner nobody
+  set partners-this-phase 0
   set locked-on nobody
   set trauma-load 0
   set mono? false
   set mono-class? false
   set mega? false
-  set handsome? false
   set bred-this-phase? false
+  set gestation 0
+  set mortality-rolled? false
   set infected? false
   set carrier? false
   set infection-age 0
@@ -88,48 +109,39 @@ to init-female
 end
 
 to-report roll-lifespan
-  report max (list 1 (base-lifespan + random (2 * lifespan-variance + 1) - lifespan-variance))
+  report max (list 1 (lifespan-phases + random (2 * lifespan-variance + 1) - lifespan-variance))
 end
 
 ;; ---- type constructors ----
 
 to become-m1
-  set breed males  set sex-type "M1"   set shinredo 1
-  set handsome? false  set mono? false
+  set breed males  set sex-type "M1"
+  set trust m1-trust-min + random-float (max (list 0 (m1-trust-max - m1-trust-min)))
+  set mono? false
 end
 
-to become-m2
-  set breed males  set sex-type "M2"   set shinredo 2
-  set handsome? true   set mono? false
-end
-
-to become-minf
-  set breed males  set sex-type "MINF" set shinredo inf-shinredo
-  set handsome? false  set mono? true
+to become-m3
+  set breed males  set sex-type "M3"
+  set trust inf-trust
+  set mono? true
 end
 
 to become-f0
-  set breed females set sex-type "F0"    set shinredo 0
-  set handsome? false set mono? false
+  set breed females set sex-type "F0"    set trust 0     set mono? false
 end
 
 to become-f01
-  set breed females set sex-type "F-0.1" set shinredo -0.1
-  set handsome? false set mono? false
+  set breed females set sex-type "F-0.1" set trust -0.1  set mono? false
 end
 
 to become-f02
-  set breed females set sex-type "F-0.2" set shinredo -0.2
-  set handsome? false set mono? false
+  set breed females set sex-type "F-0.2" set trust -0.2  set mono? false
 end
 
 to random-male-type
-  let total (weight-m1 + weight-m2 + weight-minf)
+  let total (weight-m1 + weight-m3)
   if total <= 0 [ become-m1 stop ]
-  let r random-float total
-  ifelse r < weight-m1
-    [ become-m1 ]
-    [ ifelse r < weight-m1 + weight-m2 [ become-m2 ] [ become-minf ] ]
+  ifelse random-float total < weight-m1 [ become-m1 ] [ become-m3 ]
 end
 
 to random-female-type
@@ -141,6 +153,26 @@ to random-female-type
     [ ifelse r < weight-f0 + weight-f01 [ become-f01 ] [ become-f02 ] ]
 end
 
+;; ================= LIFE STAGE =================
+
+to-report life-phase                  ;; 1 on the phase it is born
+  report age + 1
+end
+
+to-report child?
+  if mega? [ report false ]
+  report life-phase <= child-until-phase
+end
+
+to-report old?
+  if mega? [ report false ]
+  report life-phase > adult-until-phase
+end
+
+to-report adult?
+  report (not child?) and (not old?)
+end
+
 ;; ================= MAIN LOOP =================
 
 to go
@@ -149,6 +181,7 @@ to go
 
   set births-this-phase 0
   set deaths-this-phase 0
+  set cheats-this-phase 0
   set event-this-phase ""
 
   clear-mega
@@ -160,6 +193,7 @@ to go
   do-mating
   do-reproduction
   progress-aids
+  do-child-mortality
   do-collapse
   do-aging
   enforce-capacity
@@ -173,9 +207,10 @@ to reset-phase-state
   ask turtles [
     set bred-this-phase? false
     set locked-on nobody
+    set partners-this-phase 0
     ;; drop references to dead partners
     if partner != nobody [ if not member? partner turtles [ set partner nobody ] ]
-    ;; binary pairings are per-phase; mono bonds are for life
+    ;; only mono bonds persist between phases
     if partner != nobody [
       if not (mono? or [ mono? ] of partner) [ set partner nobody ]
     ]
@@ -188,23 +223,22 @@ to wander
   fd move-speed
 end
 
-;; ================= ATTRACTION & MATING =================
+;; ================= TRUST & MATING =================
 
-to-report effective-shinredo          ;; turtle reporter
-  ;; AIDS collapses a mono's infinite shinredo down to a mortal number
-  if infected? [ report aids-crash-shinredo - trauma-load ]
-  report shinredo - trauma-load
+to-report effective-trust             ;; turtle reporter
+  ;; AIDS collapses a mono's infinite trust down to a mortal number
+  if infected? [ report aids-crash-trust - trauma-load ]
+  report trust - trauma-load
 end
 
-to-report collapsed?                  ;; turtle reporter -- the "shinredo floor" rule
+to-report collapsed?                  ;; turtle reporter -- the trust floor
   if mega? [ report false ]
-  if mono? and not infected? [ report false ]   ;; healthy mono is immune
-  report effective-shinredo <= shinredo-floor
+  if mono? and not infected? [ report false ]   ;; healthy mono never collapses
+  report effective-trust <= trust-floor
 end
 
-to-report appeal                      ;; male reporter: how attractive he reads
-  let a effective-shinredo
-  if handsome?   [ set a a + handsome-bonus ]
+to-report appeal                      ;; male reporter
+  let a effective-trust
   if mono-class? [ set a a + mono-class-bonus ]
   if mega?       [ set a a + mega-bonus ]
   report a
@@ -213,12 +247,23 @@ end
 to-report available?                  ;; male reporter
   if mega? [ report false ]           ;; the mega-handsome cannot reproduce
   if collapsed? [ report false ]
-  report partner = nobody             ;; mono: one bond ever. binary: one bond per phase
+  if not adult? [ report false ]      ;; child protection
+  ;; M3 wants exactly one partner, for life. M1 wants as many as it can get.
+  if mono? [ report partner = nobody ]
+  report partners-this-phase < max-partners
+end
+
+to-report seeking?                    ;; female reporter
+  if not adult? [ report false ]      ;; child protection
+  if gestation > 0 [ report false ]   ;; still recovering from giving birth
+  if collapsed? [ report false ]
+  if locked-on != nobody [ report false ]
+  report partner = nobody
 end
 
 to-report mate-probability [ m ]      ;; female reporter, m = candidate male
-  ;; pair score = male appeal + female's own (0 / -0.1 / -0.2) shinredo, minus her trauma
-  let pair-score ([ appeal ] of m) + effective-shinredo
+  ;; pair score = his trust + her own (0 / -0.1 / -0.2) trust, minus her trauma
+  let pair-score ([ appeal ] of m) + effective-trust
   let z attraction-sensitivity * (pair-score - mating-threshold)
   if z >  30 [ report 1 ]
   if z < -30 [ report 0 ]
@@ -226,17 +271,31 @@ to-report mate-probability [ m ]      ;; female reporter, m = candidate male
 end
 
 to do-mating
-  ask females with [ partner = nobody and locked-on = nobody and not collapsed? ] [
+  ask females with [ seeking? ] [
     let pool males in-radius mate-radius
     set pool pool with [ available? ]
     if any? pool [
       let best max-one-of pool [ appeal + random-float choice-noise ]
       if random-float 1 < mate-probability best [
         set partner best
-        ask best [ set partner myself ]
+        ask best [ take-partner myself ]
         transmit-aids best
       ]
     ]
+  ]
+end
+
+to take-partner [ f ]                 ;; male procedure, f = the female
+  set partner f
+  set partners-this-phase partners-this-phase + 1
+  ;; M3 keeps a single partner for life, so its trust never declines at all
+  if mono? [ stop ]
+  ;; every meeting costs a little trust
+  set trust trust - meet-trust-cost
+  ;; cheating costs him whatever she is worth
+  if every-partner-is-cheat? or partners-this-phase > 1 [
+    set trust trust - (abs ([ trust ] of f) * cheat-penalty-multiplier)
+    set cheats-this-phase cheats-this-phase + 1
   ]
 end
 
@@ -248,17 +307,21 @@ end
 
 to try-breed                          ;; female procedure
   if bred-this-phase? [ stop ]
+  if not adult? [ stop ]              ;; child protection: mother must be grown
+  if gestation > 0 [ stop ]
   if locked-on != nobody [ stop ]     ;; wasted the phase on the mega-handsome
   if collapsed? [ stop ]
   if partner = nobody [ stop ]
   if not member? partner turtles [ set partner nobody stop ]
   let dad partner
   if [ mega? ] of dad [ stop ]
+  if not [ adult? ] of dad [ stop ]   ;; child protection: father must be grown
   if [ collapsed? ] of dad [ stop ]
-  if aids-sterile? and [ infected? ] of dad [ stop ]   ;; AIDS blocks reproduction
+  if aids-sterile? and [ infected? ] of dad [ stop ]
 
   set bred-this-phase? true
   ask dad [ set bred-this-phase? true ]
+  set gestation gestation-phases      ;; giving birth takes a phase
 
   let litter offspring-min + random (max (list 1 (offspring-max - offspring-min + 1)))
   if random-float 100 < fertility-bonus [ set litter litter + 1 ]
@@ -283,9 +346,7 @@ to try-breed                          ;; female procedure
   ]
 
   ;; --- AIDS can be contracted through the act of reproducing ---
-  ;; Only the father can catch it, and only if he is mono. Two independent
-  ;; rolls: a baseline risk per reproduction, plus a much higher risk if the
-  ;; mother is already a carrier.
+  ;; Only the father can catch it, and only if he is mono.
   if aids-on? [
     let mom-carrier? carrier?
     ask dad [
@@ -300,15 +361,13 @@ end
 to assign-male-child [ dad-type dad-monoclass? dad-infected? ]
   ;; mono-class fathers push their line toward mono
   ifelse dad-monoclass? and random-float 100 < mono-class-heritability [
-    become-minf
+    become-m3
   ] [
     ifelse random-float 100 < inherit-fidelity [
-      if dad-type = "M1" [ become-m1 ]
-      if dad-type = "M2" or dad-type = "MEGA" [ become-m2 ]
-      if dad-type = "MINF" [
+      ifelse dad-type = "M3"
         ;; mono lines rarely breed true
-        ifelse random-float 100 < mono-birth-chance [ become-minf ] [ become-m2 ]
-      ]
+        [ ifelse random-float 100 < mono-birth-chance [ become-m3 ] [ become-m1 ] ]
+        [ become-m1 ]
     ] [
       random-male-type
     ]
@@ -400,24 +459,23 @@ to tornado-event
   log-event "TORNADO"
 end
 
-;; --- 3. Godd Geonwoo (diddy): spawns a mega-handsome that magnetises every single
-;;        female. Lasts exactly one phase and cannot reproduce during it. ---
+;; --- 3. Godd Geonwoo (diddy): a mega-handsome magnetises every single female
+;;        for exactly one phase, and cannot reproduce during it. ---
 to diddy-event
   set diddy-count diddy-count + 1
   create-males 1 [
     init-common
-    set breed males
     set sex-type "MEGA"
-    set shinredo mega-shinredo
-    set handsome? true
+    set trust mega-trust
     set mega? true
-    set lifespan 1
+    set mortality-rolled? true
+    set lifespan 99                   ;; clear-mega removes him next phase
     setxy random-xcor random-ycor
     set-appearance
     set mega-who who
   ]
-  let target females with [ partner = nobody ]
-  if diddy-steals-partnered? [ set target females ]
+  let target females with [ partner = nobody and adult? ]
+  if diddy-steals-partnered? [ set target females with [ adult? ] ]
   ask target [
     if partner != nobody [
       ask partner [ set partner nobody ]
@@ -429,8 +487,7 @@ to diddy-event
   log-event "MEGA-HANDSOME (diddy)"
 end
 
-;; --- 4. 2/3 THANOS: snaps exactly two thirds of everyone except mono.
-;;        Surviving mono entities are promoted to mono class. ---
+;; --- 4. 2/3 THANOS: snaps two thirds of everyone except mono. ---
 to thanos-event
   set thanos-count thanos-count + 1
   let victims turtles with [ not mono? ]
@@ -443,9 +500,7 @@ to thanos-event
   log-event "2/3 THANOS"
 end
 
-;; --- 5. AIDS: a persistent disease that can ONLY infect mono entities.
-;;        It is the counterweight to mono: it crashes their infinite shinredo
-;;        down to a mortal number, blocks reproduction, and kills on a timer. ---
+;; --- 5. AIDS: only ever infects mono entities. ---
 to aids-event
   if not aids-on? [ stop ]
   set aids-count aids-count + 1
@@ -464,19 +519,16 @@ to infect                             ;; turtle procedure
   if infected? [ stop ]
   set infected? true
   set infection-age 0
-  ;; his bonded female becomes a carrier who can pass it on to her next mono
   if aids-carriers? and partner != nobody [
     ask partner [ if not mono? [ set carrier? true ] ]
   ]
 end
 
-to transmit-aids [ m ]                ;; female procedure, m = the male just paired with
+to transmit-aids [ m ]                ;; female procedure, m = male just paired with
   if not aids-on? [ stop ]
-  ;; a carrier passes it to the next mono she bonds with
   if carrier? and [ mono? and not infected? ] of m [
     if random-float 100 < aids-transmission [ ask m [ infect ] ]
   ]
-  ;; bonding with an infected mono makes her a carrier
   if aids-carriers? and [ infected? ] of m [ set carrier? true ]
 end
 
@@ -502,6 +554,21 @@ end
 
 ;; ================= DEATH =================
 
+;; Childhood is dangerous, and it is far more dangerous for M1 than for M3.
+to do-child-mortality
+  ask turtles with [ child? and not mortality-rolled? ] [
+    set mortality-rolled? true
+    let risk child-death-female
+    if breed = males [
+      set risk ifelse-value mono? [ child-death-mono ] [ child-death-m1 ]
+    ]
+    if random-float 100 < risk [
+      set child-deaths child-deaths + 1
+      perish
+    ]
+  ]
+end
+
 to do-collapse
   if not collapse-is-fatal? [ stop ]
   ask turtles with [ collapsed? ] [
@@ -512,6 +579,9 @@ end
 
 to do-aging
   ask turtles [
+    ;; don't tick down the phase she is giving birth in, or gestation-phases = 1
+    ;; would expire before it ever blocked anything
+    if gestation > 0 and not bred-this-phase? [ set gestation gestation - 1 ]
     set age age + 1
     let limit lifespan + (ifelse-value mono-class? [ mono-class-lifespan-bonus ] [ 0 ])
     if age >= limit [ perish ]
@@ -539,9 +609,8 @@ end
 
 to set-appearance
   set shape "circle"
-  if sex-type = "M1"    [ set color blue    set size 1.0 ]
-  if sex-type = "M2"    [ set color cyan    set size 1.4 ]
-  if sex-type = "MINF"  [ set color violet  set size 1.8  set shape "star" ]
+  if sex-type = "M1"    [ set color blue    set size 1.2 ]
+  if sex-type = "M3"    [ set color violet  set size 1.8  set shape "star" ]
   if sex-type = "MEGA"  [ set color magenta set size 3.5  set shape "star" ]
   if sex-type = "F0"    [ set color red     set size 1.0  set shape "circle 2" ]
   if sex-type = "F-0.1" [ set color orange  set size 1.0  set shape "circle 2" ]
@@ -549,6 +618,8 @@ to set-appearance
   if mono-class? [ set shape "star" set size size + 0.6 ]
   if carrier?    [ set shape "circle" ]
   if infected?   [ set shape "x" set color lime ]
+  if child?      [ set size size * 0.5 ]
+  if old?        [ set color color - 2 ]
   if collapsed?  [ set color gray ]
 end
 
@@ -556,41 +627,40 @@ to-report count-type [ t ]
   report count turtles with [ sex-type = t ]
 end
 
-to-report mean-eff-shinredo
+to-report child-count  report count turtles with [ child? ] end
+to-report adult-count  report count turtles with [ adult? and not mega? ] end
+to-report old-count    report count turtles with [ old? ] end
+
+to-report mean-male-trust
+  let pool males with [ not mono? and not mega? ]
+  ifelse any? pool [ report mean [ trust ] of pool ] [ report 0 ]
+end
+
+to-report mean-eff-trust
   let pool turtles with [ not mono? and not mega? ]
-  ifelse any? pool [ report mean [ effective-shinredo ] of pool ] [ report 0 ]
+  ifelse any? pool [ report mean [ effective-trust ] of pool ] [ report 0 ]
 end
 
 to-report mean-trauma
   ifelse any? turtles [ report mean [ trauma-load ] of turtles ] [ report 0 ]
 end
 
-to-report mono-class-count
-  report count turtles with [ mono-class? ]
-end
-
-to-report infected-count
-  report count turtles with [ infected? ]
-end
-
-to-report carrier-count
-  report count turtles with [ carrier? ]
-end
-
-to-report mono-count
-  report count turtles with [ mono? ]
-end
+to-report mono-class-count  report count turtles with [ mono-class? ] end
+to-report infected-count    report count turtles with [ infected? ] end
+to-report carrier-count     report count turtles with [ carrier? ] end
+to-report mono-count        report count turtles with [ mono? ] end
 
 to-report pair-rate
-  ifelse any? females
-    [ report 100 * (count females with [ partner != nobody ]) / (count females) ]
+  let pool females with [ adult? ]
+  ifelse any? pool
+    [ report 100 * (count pool with [ partner != nobody ]) / (count pool) ]
     [ report 0 ]
 end
 @#$#@#$#@
 GRAPHICS-WINDOW
-610
+810
 10
-1047
+1247
 448
 -1
 -1
@@ -704,7 +774,7 @@ weight-m1
 weight-m1
 0
 100
-55.0
+75.0
 1
 1
 %
@@ -715,11 +785,11 @@ SLIDER
 155
 200
 188
-weight-m2
-weight-m2
+weight-m3
+weight-m3
 0
 100
-20.0
+25.0
 1
 1
 %
@@ -730,21 +800,6 @@ SLIDER
 190
 200
 223
-weight-minf
-weight-minf
-0
-100
-10.0
-1
-1
-%
-HORIZONTAL
-
-SLIDER
-5
-225
-200
-258
 weight-f0
 weight-f0
 0
@@ -757,9 +812,9 @@ HORIZONTAL
 
 SLIDER
 5
-260
+225
 200
-293
+258
 weight-f01
 weight-f01
 0
@@ -772,9 +827,9 @@ HORIZONTAL
 
 SLIDER
 5
-295
+260
 200
-328
+293
 weight-f02
 weight-f02
 0
@@ -787,14 +842,29 @@ HORIZONTAL
 
 SLIDER
 5
+295
+200
+328
+child-until-phase
+child-until-phase
+1
+4
+1.0
+1
+1
+phases
+HORIZONTAL
+
+SLIDER
+5
 330
 200
 363
-base-lifespan
-base-lifespan
-1
-10
-2.0
+adult-until-phase
+adult-until-phase
+2
+12
+6.0
 1
 1
 phases
@@ -805,10 +875,25 @@ SLIDER
 365
 200
 398
+lifespan-phases
+lifespan-phases
+2
+20
+8.0
+1
+1
+phases
+HORIZONTAL
+
+SLIDER
+5
+400
+200
+433
 lifespan-variance
 lifespan-variance
 0
-3
+4
 0.0
 1
 1
@@ -817,9 +902,69 @@ HORIZONTAL
 
 SLIDER
 5
-400
+435
 200
-433
+468
+child-death-m1
+child-death-m1
+0
+100
+60.0
+1
+1
+%
+HORIZONTAL
+
+SLIDER
+5
+470
+200
+503
+child-death-mono
+child-death-mono
+0
+100
+20.0
+1
+1
+%
+HORIZONTAL
+
+SLIDER
+5
+505
+200
+538
+child-death-female
+child-death-female
+0
+100
+20.0
+1
+1
+%
+HORIZONTAL
+
+SLIDER
+5
+540
+200
+573
+gestation-phases
+gestation-phases
+0
+4
+1.0
+1
+1
+phases
+HORIZONTAL
+
+SLIDER
+5
+575
+200
+608
 male-birth-pct
 male-birth-pct
 0
@@ -832,9 +977,9 @@ HORIZONTAL
 
 SLIDER
 5
-435
+610
 200
-468
+643
 offspring-min
 offspring-min
 0
@@ -847,9 +992,9 @@ HORIZONTAL
 
 SLIDER
 5
-470
+645
 200
-503
+678
 offspring-max
 offspring-max
 1
@@ -862,54 +1007,9 @@ HORIZONTAL
 
 SLIDER
 5
-505
+680
 200
-538
-carrying-capacity
-carrying-capacity
-0
-3000
-1200.0
-50
-1
-NIL
-HORIZONTAL
-
-SLIDER
-5
-540
-200
-573
-move-speed
-move-speed
-0
-3
-1.0
-0.1
-1
-NIL
-HORIZONTAL
-
-SLIDER
-5
-575
-200
-608
-mate-radius
-mate-radius
-1
-20
-7.0
-1
-1
-NIL
-HORIZONTAL
-
-SLIDER
-5
-610
-200
-643
+713
 fertility-bonus
 fertility-bonus
 0
@@ -921,12 +1021,27 @@ fertility-bonus
 HORIZONTAL
 
 SLIDER
+5
+715
+200
+748
+carrying-capacity
+carrying-capacity
+0
+3000
+1200.0
+50
+1
+NIL
+HORIZONTAL
+
+SLIDER
 205
 50
 400
 83
-inf-shinredo
-inf-shinredo
+inf-trust
+inf-trust
 10
 1000
 1000.0
@@ -940,8 +1055,8 @@ SLIDER
 85
 400
 118
-handsome-bonus
-handsome-bonus
+m1-trust-min
+m1-trust-min
 0
 5
 1.0
@@ -955,6 +1070,77 @@ SLIDER
 120
 400
 153
+m1-trust-max
+m1-trust-max
+0
+5
+2.0
+0.1
+1
+NIL
+HORIZONTAL
+
+SLIDER
+205
+155
+400
+188
+meet-trust-cost
+meet-trust-cost
+0
+1
+0.1
+0.01
+1
+per meeting
+HORIZONTAL
+
+SLIDER
+205
+190
+400
+223
+cheat-penalty-multiplier
+cheat-penalty-multiplier
+0
+10
+1.0
+0.1
+1
+x her trust
+HORIZONTAL
+
+SWITCH
+205
+225
+400
+258
+every-partner-is-cheat?
+every-partner-is-cheat?
+0
+1
+-1000
+
+SLIDER
+205
+260
+400
+293
+max-partners
+max-partners
+1
+10
+3.0
+1
+1
+per phase
+HORIZONTAL
+
+SLIDER
+205
+295
+400
+328
 mono-class-bonus
 mono-class-bonus
 0
@@ -967,9 +1153,9 @@ HORIZONTAL
 
 SLIDER
 205
-155
+330
 400
-188
+363
 mega-bonus
 mega-bonus
 0
@@ -982,11 +1168,11 @@ HORIZONTAL
 
 SLIDER
 205
-190
+365
 400
-223
-mega-shinredo
-mega-shinredo
+398
+mega-trust
+mega-trust
 0
 50
 10.0
@@ -997,9 +1183,9 @@ HORIZONTAL
 
 SLIDER
 205
-225
 400
-258
+400
+433
 mating-threshold
 mating-threshold
 -2
@@ -1012,9 +1198,9 @@ HORIZONTAL
 
 SLIDER
 205
-260
+435
 400
-293
+468
 attraction-sensitivity
 attraction-sensitivity
 0.1
@@ -1027,9 +1213,9 @@ HORIZONTAL
 
 SLIDER
 205
-295
+470
 400
-328
+503
 choice-noise
 choice-noise
 0
@@ -1042,14 +1228,40 @@ HORIZONTAL
 
 SLIDER
 205
-330
+505
 400
-363
-shinredo-floor
-shinredo-floor
+538
+trust-floor
+trust-floor
 -3
-0
+1
 -0.5
+0.1
+1
+NIL
+HORIZONTAL
+
+SWITCH
+205
+540
+400
+573
+collapse-is-fatal?
+collapse-is-fatal?
+0
+1
+-1000
+
+SLIDER
+205
+575
+400
+608
+move-speed
+move-speed
+0
+3
+1.0
 0.1
 1
 NIL
@@ -1057,9 +1269,24 @@ HORIZONTAL
 
 SLIDER
 205
-365
+610
 400
-398
+643
+mate-radius
+mate-radius
+1
+20
+7.0
+1
+1
+NIL
+HORIZONTAL
+
+SLIDER
+205
+645
+400
+678
 inherit-fidelity
 inherit-fidelity
 0
@@ -1072,9 +1299,9 @@ HORIZONTAL
 
 SLIDER
 205
+680
 400
-400
-433
+713
 mono-birth-chance
 mono-birth-chance
 0
@@ -1087,9 +1314,9 @@ HORIZONTAL
 
 SLIDER
 205
-435
+715
 400
-468
+748
 mono-class-heritability
 mono-class-heritability
 0
@@ -1101,10 +1328,10 @@ mono-class-heritability
 HORIZONTAL
 
 SLIDER
-205
-470
-400
-503
+405
+50
+600
+83
 female-drift-chance
 female-drift-chance
 0
@@ -1116,10 +1343,10 @@ female-drift-chance
 HORIZONTAL
 
 SLIDER
-205
-505
-400
-538
+405
+85
+600
+118
 female-recovery-chance
 female-recovery-chance
 0
@@ -1131,10 +1358,10 @@ female-recovery-chance
 HORIZONTAL
 
 SLIDER
-205
-540
-400
-573
+405
+120
+600
+153
 mutation-chance
 mutation-chance
 0
@@ -1146,10 +1373,10 @@ mutation-chance
 HORIZONTAL
 
 SLIDER
-205
-575
-400
-608
+405
+155
+600
+188
 trauma-heritability
 trauma-heritability
 0
@@ -1161,10 +1388,10 @@ trauma-heritability
 HORIZONTAL
 
 SLIDER
-205
-610
-400
-643
+405
+190
+600
+223
 mono-class-lifespan-bonus
 mono-class-lifespan-bonus
 0
@@ -1176,10 +1403,10 @@ phases
 HORIZONTAL
 
 SLIDER
-205
-645
-400
-678
+405
+225
+600
+258
 stop-at-phase
 stop-at-phase
 0
@@ -1192,9 +1419,9 @@ HORIZONTAL
 
 SWITCH
 405
-50
+262
 600
-83
+295
 trauma-on?
 trauma-on?
 0
@@ -1203,9 +1430,9 @@ trauma-on?
 
 CHOOSER
 405
-85
+297
 600
-130
+342
 trauma-mode
 trauma-mode
 "random" "scheduled"
@@ -1213,9 +1440,9 @@ trauma-mode
 
 SLIDER
 405
-132
+344
 600
-165
+377
 trauma-interval
 trauma-interval
 1
@@ -1228,9 +1455,9 @@ HORIZONTAL
 
 SLIDER
 405
-167
+379
 600
-200
+412
 tsunami-chance
 tsunami-chance
 0
@@ -1243,9 +1470,9 @@ HORIZONTAL
 
 SLIDER
 405
-202
+414
 600
-235
+447
 tsunami-width
 tsunami-width
 1
@@ -1258,9 +1485,9 @@ HORIZONTAL
 
 SLIDER
 405
-237
+449
 600
-270
+482
 tsunami-lethality
 tsunami-lethality
 0
@@ -1273,9 +1500,9 @@ HORIZONTAL
 
 SLIDER
 405
-272
+484
 600
-305
+517
 tsunami-trauma
 tsunami-trauma
 0
@@ -1288,9 +1515,9 @@ HORIZONTAL
 
 SLIDER
 405
-307
+519
 600
-340
+552
 tornado-chance
 tornado-chance
 0
@@ -1303,9 +1530,9 @@ HORIZONTAL
 
 SLIDER
 405
-342
+554
 600
-375
+587
 tornado-radius
 tornado-radius
 1
@@ -1318,9 +1545,9 @@ HORIZONTAL
 
 SLIDER
 405
-377
+589
 600
-410
+622
 tornado-lethality
 tornado-lethality
 0
@@ -1333,24 +1560,24 @@ HORIZONTAL
 
 SLIDER
 405
-412
+624
 600
-445
+657
 tornado-trauma
 tornado-trauma
 0
 2
 0.04
-0.05
+0.01
 1
 NIL
 HORIZONTAL
 
 SLIDER
 405
-447
+659
 600
-480
+692
 diddy-chance
 diddy-chance
 0
@@ -1363,9 +1590,9 @@ HORIZONTAL
 
 SLIDER
 405
-482
+694
 600
-515
+727
 diddy-trauma
 diddy-trauma
 0
@@ -1378,9 +1605,9 @@ HORIZONTAL
 
 SWITCH
 405
-517
+729
 600
-550
+762
 diddy-steals-partnered?
 diddy-steals-partnered?
 1
@@ -1389,9 +1616,9 @@ diddy-steals-partnered?
 
 SLIDER
 405
-552
+764
 600
-585
+797
 thanos-chance
 thanos-chance
 0
@@ -1404,9 +1631,9 @@ HORIZONTAL
 
 SLIDER
 405
-587
+799
 600
-620
+832
 thanos-trauma
 thanos-trauma
 0
@@ -1418,21 +1645,10 @@ NIL
 HORIZONTAL
 
 SWITCH
-405
-622
-600
-655
-collapse-is-fatal?
-collapse-is-fatal?
-0
-1
--1000
-
-SWITCH
-405
-665
-600
-698
+605
+50
+800
+83
 aids-on?
 aids-on?
 0
@@ -1440,10 +1656,10 @@ aids-on?
 -1000
 
 SLIDER
-405
-700
-600
-733
+605
+85
+800
+118
 aids-chance
 aids-chance
 0
@@ -1455,10 +1671,10 @@ aids-chance
 HORIZONTAL
 
 SLIDER
-405
-735
-600
-768
+605
+120
+800
+153
 aids-initial-infect
 aids-initial-infect
 0
@@ -1470,10 +1686,10 @@ aids-initial-infect
 HORIZONTAL
 
 SLIDER
-405
-770
-600
-803
+605
+155
+800
+188
 aids-duration
 aids-duration
 1
@@ -1485,12 +1701,12 @@ phases
 HORIZONTAL
 
 SLIDER
-405
-805
-600
-838
-aids-crash-shinredo
-aids-crash-shinredo
+605
+190
+800
+223
+aids-crash-trust
+aids-crash-trust
 -2
 3
 0.3
@@ -1500,10 +1716,10 @@ NIL
 HORIZONTAL
 
 SLIDER
-405
-840
-600
-873
+605
+225
+800
+258
 aids-transmission
 aids-transmission
 0
@@ -1515,10 +1731,10 @@ aids-transmission
 HORIZONTAL
 
 SLIDER
-405
-875
-600
-908
+605
+260
+800
+293
 aids-breeding-chance
 aids-breeding-chance
 0
@@ -1530,10 +1746,10 @@ aids-breeding-chance
 HORIZONTAL
 
 SLIDER
-405
-910
-600
-943
+605
+295
+800
+328
 aids-vertical
 aids-vertical
 0
@@ -1545,10 +1761,10 @@ aids-vertical
 HORIZONTAL
 
 SWITCH
-405
-945
-600
-978
+605
+330
+800
+363
 aids-carriers?
 aids-carriers?
 0
@@ -1556,20 +1772,40 @@ aids-carriers?
 -1000
 
 SWITCH
-405
-980
-600
-1013
+605
+365
+800
+398
 aids-sterile?
 aids-sterile?
 0
 1
 -1000
 
+PLOT
+605
+405
+800
+690
+life stages
+phase
+count
+0.0
+20.0
+0.0
+50.0
+true
+true
+"" ""
+PENS
+"child" 1.0 0 -1184463 true "" "plot child-count"
+"adult" 1.0 0 -13840069 true "" "plot adult-count"
+"old" 1.0 0 -7500403 true "" "plot old-count"
+
 MONITOR
-610
+810
 455
-678
+878
 500
 phase
 ticks
@@ -1578,9 +1814,9 @@ ticks
 11
 
 MONITOR
-681
+881
 455
-760
+960
 500
 alive
 count turtles
@@ -1589,9 +1825,9 @@ count turtles
 11
 
 MONITOR
-763
+963
 455
-860
+1060
 500
 paired %
 pair-rate
@@ -1600,9 +1836,9 @@ pair-rate
 11
 
 MONITOR
-863
+1063
 455
-1047
+1247
 500
 trauma event
 event-this-phase
@@ -1611,9 +1847,9 @@ event-this-phase
 11
 
 MONITOR
-610
+810
 503
-676
+880
 548
 M1
 count-type "M1"
@@ -1622,31 +1858,20 @@ count-type "M1"
 11
 
 MONITOR
-679
+883
 503
-745
+953
 548
-M2
-count-type "M2"
+M3 (mono)
+count-type "M3"
 0
 1
 11
 
 MONITOR
-748
+956
 503
-820
-548
-MINF
-count-type "MINF"
-0
-1
-11
-
-MONITOR
-823
-503
-915
+1050
 548
 mono class
 mono-class-count
@@ -1655,20 +1880,20 @@ mono-class-count
 11
 
 MONITOR
-918
+1053
 503
-1047
+1247
 548
-mean trauma
-mean-trauma
+mean M1 trust
+mean-male-trust
 3
 1
 11
 
 MONITOR
-610
+810
 551
-676
+880
 596
 F0
 count-type "F0"
@@ -1677,9 +1902,9 @@ count-type "F0"
 11
 
 MONITOR
-679
+883
 551
-752
+960
 596
 F-0.1
 count-type "F-0.1"
@@ -1688,9 +1913,9 @@ count-type "F-0.1"
 11
 
 MONITOR
-755
+963
 551
-828
+1040
 596
 F-0.2
 count-type "F-0.2"
@@ -1699,32 +1924,65 @@ count-type "F-0.2"
 11
 
 MONITOR
-831
+1043
 551
-1047
+1247
 596
-mean eff. shinredo (non-mono)
-mean-eff-shinredo
+mean effective trust (non-mono)
+mean-eff-trust
 3
 1
 11
 
 MONITOR
-610
+810
 599
-700
+890
 644
-mono (all)
-mono-count
+children
+child-count
 0
 1
 11
 
 MONITOR
-703
+893
 599
-800
+970
 644
+adults
+adult-count
+0
+1
+11
+
+MONITOR
+973
+599
+1050
+644
+old
+old-count
+0
+1
+11
+
+MONITOR
+1053
+599
+1247
+644
+cheats this phase
+cheats-this-phase
+0
+1
+11
+
+MONITOR
+810
+647
+900
+692
 AIDS infected
 infected-count
 0
@@ -1732,10 +1990,10 @@ infected-count
 11
 
 MONITOR
-803
-599
-900
-644
+903
+647
+1010
+692
 carriers
 carrier-count
 0
@@ -1743,21 +2001,32 @@ carrier-count
 11
 
 MONITOR
-903
-599
-1047
-644
-AIDS deaths (total)
+1013
+647
+1120
+692
+AIDS deaths
 aids-deaths
 0
 1
 11
 
+MONITOR
+1123
+647
+1247
+692
+child deaths
+child-deaths
+0
+1
+11
+
 PLOT
-610
-648
-1047
-838
+810
+696
+1247
+886
 population by type
 phase
 count
@@ -1770,8 +2039,7 @@ true
 "" ""
 PENS
 "M1" 1.0 0 -13345367 true "" "plot count-type \"M1\""
-"M2" 1.0 0 -11221820 true "" "plot count-type \"M2\""
-"MINF" 1.0 0 -8630108 true "" "plot count-type \"MINF\""
+"M3 mono" 1.0 0 -8630108 true "" "plot count-type \"M3\""
 "F0" 1.0 0 -2674135 true "" "plot count-type \"F0\""
 "F-0.1" 1.0 0 -955883 true "" "plot count-type \"F-0.1\""
 "F-0.2" 1.0 0 -1184463 true "" "plot count-type \"F-0.2\""
@@ -1779,11 +2047,11 @@ PENS
 "infected" 1.0 0 -13840069 true "" "plot infected-count"
 
 PLOT
-610
-841
-1047
-991
-shinredo & trauma
+810
+889
+1247
+1039
+trust & trauma
 phase
 value
 0.0
@@ -1794,15 +2062,16 @@ true
 true
 "" ""
 PENS
-"eff. shinredo" 1.0 0 -16777216 true "" "plot mean-eff-shinredo"
+"mean M1 trust" 1.0 0 -13345367 true "" "plot mean-male-trust"
+"eff. trust" 1.0 0 -16777216 true "" "plot mean-eff-trust"
 "trauma load" 1.0 0 -2674135 true "" "plot mean-trauma"
-"floor" 1.0 0 -7500403 true "" "plot shinredo-floor"
+"floor" 1.0 0 -7500403 true "" "plot trust-floor"
 
 PLOT
 5
-685
+755
 400
-860
+930
 births & deaths per phase
 phase
 count
@@ -1817,154 +2086,132 @@ PENS
 "births" 1.0 0 -10899396 true "" "plot births-this-phase"
 "deaths" 1.0 0 -2674135 true "" "plot deaths-this-phase"
 "population" 1.0 0 -16777216 true "" "plot count turtles"
+"cheats" 1.0 0 -955883 true "" "plot cheats-this-phase"
 
 @#$#@#$#@
-# SOSOPH :: SHINREDO REPRODUCTION MODEL
+# SOSOPH :: TRUST REPRODUCTION MODEL
 
-An agent-based reproduction model where mating success is driven by a scalar
-trait called **shinredo**, and where recurring catastrophes ("generational
-trauma") leave a heritable scar on every survivor's lineage.
+An agent-based reproduction model in which male mating value is a depleting
+resource called **trust**, and the two male strategies - promiscuity and
+monogamy - pay for it in completely different ways.
 
-One tick = one **phase**. Entities normally live **2 phases**.
+One tick = one **phase**.
 
-## AGENT TYPES
+## MALE TYPES
 
-### Male (3 types)
+Only males have trust in the sense that matters: theirs is a stock that can be
+spent down. There are two of them. **M2 has been removed**; M1 now covers the
+whole 1.0-2.0 range that M1 and M2 used to split between them.
 
-| Type | shinredo | attribute | reproduction |
+| Type | trust | wants | trust decay |
 | --- | --- | --- | --- |
-| M1   | 1   | -        | binary (male + female pair, re-formed each phase) |
-| M2   | 2   | handsome | binary, plus `handsome-bonus` to appeal |
-| MINF | inf | mono     | bonds with exactly one female, for life |
+| M1 | 1.0 - 2.0, rolled at birth | **many** partners | yes - and fast |
+| M3 | infinite | **one** partner, for life | **never** |
 
-`inf-shinredo` is a large finite stand-in for infinity so the logistic never
-overflows. MINF wins any contest it enters, but it can only ever hold one
-partner, so it acts as a scarce resource rather than a takeover.
+**M1** takes up to `max-partners` females per phase. Every meeting costs him
+`meet-trust-cost` (0.1). On top of that he cheats, and cheating costs him
+whatever his partner is worth: her trust value, times
+`cheat-penalty-multiplier`. With `every-partner-is-cheat?` on - the default,
+since M1 always cheats - that penalty applies to every single partner, not
+just the extras.
 
-### Female (3 types)
+**M3 is mono.** It bonds with exactly one female and holds that bond for life,
+so it never meets anyone new and never cheats. Its trust therefore never
+declines at all. This is the whole trade-off in the model: M1 can out-breed M3
+in any single phase, but it burns down its own trust doing so, and once its
+effective trust hits `trust-floor` it collapses - it can no longer attract
+anyone, and it dies if `collapse-is-fatal?` is on.
 
-| Type  | shinredo |
+## FEMALE TYPES
+
+| Type | trust |
 | --- | --- |
-| F0    |  0   |
+| F0 | 0 |
 | F-0.1 | -0.1 |
 | F-0.2 | -0.2 |
 
-The female value is a straight drag coefficient on every pairing she is in:
+A female's trust does two jobs. It drags on the pair score of any match she is
+in (`pair score = his trust + her trust - her trauma`), and it is the price a
+cheating male pays to be with her. Note the consequence: an **F0 female is free
+to cheat with** - she costs the male nothing beyond the flat meeting cost.
+Raise `cheat-penalty-multiplier` to scale all three female types up at once.
 
-    pair score = male appeal + female shinredo - her trauma load
+## LIFE CYCLE - 8 PHASES
 
-Female offspring inherit their mother's type but **drift downward**
-(F0 -> F-0.1 -> F-0.2) at `female-drift-chance`, and recover upward at
-`female-recovery-chance`. Left alone, lines ratchet down.
+| Life phase | Stage | Can reproduce |
+| --- | --- | --- |
+| 1 | child | **no** |
+| 2 - 6 | adult | yes |
+| 7 - 8 | old | **no** |
+
+Boundaries are set by `child-until-phase` (1), `adult-until-phase` (6) and
+`lifespan-phases` (8).
+
+**Child protection.** Nothing can reproduce until it has grown for at least
+one full phase. The check runs on both parents, so a grown female cannot
+breed with a male child either.
+
+**Childhood is lethal, and unevenly so.** Every entity takes exactly one
+mortality roll, during its child phase:
+
+- M1 male child: **60%** chance of dying (`child-death-m1`)
+- M3 male child: **20%** chance of dying (`child-death-mono`)
+- female child: **20%** chance of dying (`child-death-female`)
+
+This is the counterweight to M1's breeding advantage - it produces far more
+children, but two out of three of its sons never reach adulthood.
+
+**Giving birth takes a phase.** After a female gives birth she is occupied for
+`gestation-phases` (1), during which she cannot pair or breed.
 
 ## GENERATIONAL TRAUMA
 
-Five events. In `random` mode each rolls its own per-phase chance (several can
-land in the same phase). In `scheduled` mode they rotate in order every
-`trauma-interval` phases.
+Five events. In `random` mode each rolls its own per-phase chance. In
+`scheduled` mode they rotate in order every `trauma-interval` phases.
 
-The two natural disasters are tuned to be survivable: they thin the population
-and leave a trauma scar, but they are no longer the main driver of extinction.
+1. **Tsunami** - a band sweeps the world (1% per phase, 25% lethality).
+2. **Tornado** - a vortex kills and scatters (2% per phase, 20% lethality).
+3. **Godd Geonwoo (diddy)** - a mega-handsome magnetises every single adult
+   female for one phase and cannot reproduce, so they all waste the phase.
+4. **2/3 Thanos** - removes two thirds of everyone except mono, and promotes
+   surviving mono entities to **mono class**.
+5. **AIDS** - see below.
 
-1. **Tsunami** - a horizontal band sweeps the world, killing at
-   `tsunami-lethality` (default 25%). Survivors take `tsunami-trauma`.
-2. **Tornado** - a vortex of `tornado-radius` kills at `tornado-lethality`
-   (default 20%), and throws survivors to random locations.
-3. **Godd Geonwoo (diddy)** - spawns a **mega-handsome** with overwhelming
-   appeal. Every single (unpartnered) female locks onto him for that phase, and
-   he **cannot reproduce** - so all of them waste the phase. He exists for
-   exactly one phase. Flip `diddy-steals-partnered?` on and he breaks existing
-   mono bonds too.
-4. **2/3 Thanos** - snaps exactly two thirds of the population, **excluding
-   mono**. Every surviving mono entity is promoted to **mono class**: extra
-   appeal (`mono-class-bonus`), extra lifespan (`mono-class-lifespan-bonus`),
-   and sons that inherit MINF at `mono-class-heritability`.
-
-5. **AIDS** - the only thing in the model that can touch mono. See below.
-
-Trauma is the through-line of the model: `trauma-load` passes to children at
-`trauma-heritability` and subtracts from shinredo permanently.
+`trauma-load` passes to children at `trauma-heritability` and subtracts from
+trust permanently.
 
 ## AIDS
 
-AIDS **only ever infects mono entities**. Nothing else in the model can carry
-it as a disease. It exists as the counterweight to mono, which is otherwise
-unbeatable: infinite shinredo, immune to the shinredo floor, and explicitly
-spared by the Thanos snap.
+AIDS **only ever infects mono (M3) entities**. It is the counterweight to
+mono, which is otherwise unbeatable: infinite trust that never decays, no
+collapse, and an explicit exemption from the Thanos snap.
 
-An infected mono:
+An infected mono has its infinite trust crashed to `aids-crash-trust`, cannot
+reproduce while `aids-sterile?` is on, keeps holding its lifelong bond
+regardless, and dies after `aids-duration` phases.
 
-- has its **infinite shinredo crashed** to `aids-crash-shinredo`, so it stops
-  outcompeting every other male and can now fall below the shinredo floor
-- **cannot reproduce** while `aids-sterile?` is on - but it still holds its
-  lifelong bond, so it takes a female out of the breeding pool with it
-- **dies** after `aids-duration` phases
-
-Three transmission routes:
-
-- **Outbreak** - fires at `aids-chance` per phase (or in the scheduled
-  rotation) and infects `aids-initial-infect`% of all healthy monos at once.
-- **Reproduction** - every time a mono father actually produces offspring he
-  rolls `aids-breeding-chance` to contract it. If the mother is already a
-  carrier he rolls again, this time at the much higher `aids-transmission`.
-  Because a mono bond lasts for life and breeds every phase, this risk
-  compounds: the more successfully a mono line reproduces, the more likely it
-  is to catch AIDS.
-- **Carriers** - with `aids-carriers?` on, the female bonded to an infected
-  mono becomes a carrier. She is never infected herself, but if she outlives
-  him and re-pairs with another mono, she infects him at `aids-transmission`.
-  This is how the disease crosses between mono lineages.
-- **Vertical** - a mono son of an infected father is born infected at
-  `aids-vertical`. Note this route only opens up when `aids-sterile?` is
-  **off**: a father who cannot reproduce at all obviously cannot pass it to a
-  son, so with the default settings outbreaks and carriers do all the work.
-
-Infected entities render as a lime **x**. Watch the `MINF` count and the
-`AIDS infected` monitor together: outbreaks carve the mono population down and
-briefly hand the field back to M1 and M2.
-
-## THE SHINREDO FLOOR
-
-When an entity's effective shinredo (base minus inherited trauma) falls to or
-below `shinredo-floor`, it **collapses**: it cannot reproduce, it renders gray,
-and if `collapse-is-fatal?` is on it dies at the end of the phase. Mono
-entities are immune.
-
-## FERTILITY
-
-The population is tuned to grow. `mating-threshold` sits at 0.0 so an ordinary
-M1 clears it easily, `mate-radius` and `move-speed` are high enough that
-females actually find partners, litters run 1-4, and `fertility-bonus` adds a
-further offspring to 35% of all births.
-
-To make it grow faster still: drop `mating-threshold` below zero, raise
-`fertility-bonus`, or raise `offspring-max`. `carrying-capacity` is the hard
-ceiling - raise it or set it to 0 to remove the cap entirely.
-
-All four catastrophe chances are now low enough that they punctuate a run
-rather than define it: tsunami 1%, tornado 2%, diddy 4%, Thanos 2% per phase.
-Thanos is still the single biggest event in the model - it removes two thirds
-of every non-mono entity whenever it lands - so raise or lower `thanos-chance`
-first if you want to change the overall shape of a run.
+Four transmission routes: **outbreaks**, **reproduction** (a mono father rolls
+`aids-breeding-chance` every time he produces offspring, and rolls again at
+`aids-transmission` if the mother is a carrier), **carriers** (a female bonded
+to an infected mono is never infected herself but passes it to the next mono
+she bonds with), and **vertical** transmission to mono sons.
 
 ## WHAT TO WATCH
 
-- Set `trauma-mode` to `scheduled` with `trauma-interval` 7 to see all five
-  events cycle in order.
-- Run two Thanos snaps in a row and the population converges to mono class -
-  then let one AIDS outbreak land and watch that dominance come apart.
-- Turn `aids-on?` off and mono ratchets upward forever. Turn it on and mono
-  oscillates instead.
-- Turn `trauma-heritability` to 0 and the population stabilises; turn it to 100
-  and every lineage eventually hits the floor.
-- The diddy event is cheap in deaths but carves a visible notch out of the
-  births curve.
+- The M1-vs-M3 race is the point of the model. Watch `mean M1 trust` fall
+  while the `M1` count climbs, then watch M1 collapse as trust hits the floor.
+- Turn `every-partner-is-cheat?` off and M1 becomes far more sustainable.
+- Set `child-death-m1` down to 20% to match M3 and M1 runs away with the
+  population.
+- Turn `aids-on?` off and mono ratchets upward forever.
+- The `life stages` plot shows the child mortality bottleneck directly.
 
 ## COLOR KEY
 
-blue = M1, cyan = M2 (handsome), violet star = MINF (mono),
-magenta star = mega-handsome, red = F0, orange = F-0.1, yellow = F-0.2,
-gray = collapsed, star shape = mono class, lime x = AIDS-infected.
+blue = M1, violet star = M3 (mono), magenta star = mega-handsome,
+red = F0, orange = F-0.1, yellow = F-0.2, lime x = AIDS-infected,
+gray = collapsed, star = mono class. Children render at half size, old
+entities render darker.
 @#$#@#$#@
 default
 true
