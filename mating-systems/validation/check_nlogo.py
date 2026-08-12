@@ -53,9 +53,10 @@ def sections(path):
 
 def check(path):
     problems = []
+    # NOTE: this split mis-handles adjacent separators (an empty section), so
+    # it is used only to reach the code and interface text. check_structure()
+    # below validates the section layout properly.
     secs = sections(path)
-    if len(secs) < 11:
-        problems.append(f"expected 11+ sections, found {len(secs)}")
     code = secs[0]
 
     # --- bracket and paren balance
@@ -136,4 +137,96 @@ for name in ("monogamy.nlogo", "polygyny.nlogo"):
             print(f"   - {p}")
     else:
         print(f"{name}: OK")
+
+
+
+# ---------------------------------------------------------------------------
+# Structural comparison against a genuine NetLogo 6.4 model.
+#
+# The widget formats below were read out of NetLogo's own Sample Models rather
+# than written from memory: each entry is the exact number of lines that widget
+# type occupies. A wrong count, a blank line where a section should be empty,
+# or scientific notation in a slider value all make NetLogo refuse the file
+# with errors that do not name the real culprit.
+# ---------------------------------------------------------------------------
+WIDGET_LINES = {
+    "GRAPHICS-WINDOW": 26,
+    "BUTTON": 16,
+    "SLIDER": 14,
+    "MONITOR": 10,
+    "SWITCH": 10,
+    "CHOOSER": None,     # variable: depends on the number of choices
+    "PLOT": None,        # variable: depends on the number of pens
+    "TEXTBOX": 9,
+}
+PLOT_HEADER_LINES = 16   # up to and including the PENS line
+
+
+def check_structure(path):
+    problems = []
+    raw = path.read_text()
+
+    if not raw.endswith("@#$#@#$#@\n"):
+        problems.append("file must end with a separator line")
+    if "@#$#@#$#@\n\n@#$#@#$#@" in raw:
+        problems.append("empty section written as a blank line; NetLogo needs "
+                        "two adjacent separator lines")
+
+    chunks = raw.split("@#$#@#$#@\n")
+    # 11 sections plus the empty remainder after the final separator
+    if len(chunks) != 12:
+        problems.append(f"expected 11 sections, found {len(chunks) - 1}")
+
+    for w in chunks[1].split("\n\n"):
+        lines = [l for l in w.split("\n") if l != ""]
+        if not lines:
+            continue
+        kind = lines[0]
+        if kind not in WIDGET_LINES:
+            problems.append(f"unknown widget type {kind!r}")
+            continue
+        want = WIDGET_LINES[kind]
+        if kind == "PLOT":
+            if len(lines) < PLOT_HEADER_LINES + 1:
+                problems.append(f"PLOT block has {len(lines)} lines, "
+                                f"needs at least {PLOT_HEADER_LINES + 1}")
+            elif lines[PLOT_HEADER_LINES - 1] != "PENS":
+                problems.append("PLOT block: line 16 must be 'PENS'")
+        elif want is not None and len(lines) != want:
+            problems.append(f"{kind} block has {len(lines)} lines, needs {want}")
+
+        if kind == "SLIDER":
+            for field in lines[7:11]:
+                if "e" in field.lower():
+                    problems.append(f"slider {lines[5]}: value {field!r} uses "
+                                    f"scientific notation, which NetLogo "
+                                    f"cannot parse")
+
+    # the view's pixel extents must match patches x patch-size, plus the border
+    gw = chunks[1].split("\n\n")[0].split("\n")
+    if gw[0] == "GRAPHICS-WINDOW" and len(gw) == 26:
+        left, top, right, bottom = (int(gw[i]) for i in (1, 2, 3, 4))
+        psize = float(gw[7])
+        minx, maxx, miny, maxy = (int(gw[i]) for i in (17, 18, 19, 20))
+        wide = psize * (maxx - minx + 1)
+        high = psize * (maxy - miny + 1)
+        if abs((right - left) - wide) > 12 or abs((bottom - top) - high) > 12:
+            problems.append(
+                f"view is {right - left}x{bottom - top} px but "
+                f"{maxx - minx + 1}x{maxy - miny + 1} patches at {psize} px "
+                f"needs about {wide:.0f}x{high:.0f}")
+    return problems
+
+
+print()
+for name in ("monogamy.nlogo", "polygyny.nlogo"):
+    path = HERE / name
+    problems = check_structure(path)
+    if problems:
+        ok = False
+        print(f"{name} structure: {len(problems)} problem(s)")
+        for p in problems:
+            print(f"   - {p}")
+    else:
+        print(f"{name} structure: OK")
 sys.exit(0 if ok else 1)

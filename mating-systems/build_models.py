@@ -878,10 +878,10 @@ SLIDERS = [
     ("efficiency-min", 0.1, 0.05, 1, 0.5, "x"),
     ("efficiency-max", 1, 0.05, 3, 2.0, "x"),
     ("siler-a1", 0, 0.01, 1, 0.422, "per yr"),
-    ("siler-b1", 0.5, 0.01, 2, 1.131, ""),
+    ("siler-b1", 0.5, 0.01, 2, 1.131, "NIL"),
     ("siler-a2", 0, 0.001, 0.05, 0.013, "per yr"),
     ("siler-a3", 0, 0.00001, 0.001, 4.32e-05, "per yr"),
-    ("siler-b3", 0.05, 0.0005, 0.2, 0.1075, ""),
+    ("siler-b3", 0.05, 0.0005, 0.2, 0.1075, "NIL"),
 ]
 
 MONITORS = [
@@ -921,12 +921,25 @@ PLOTS = [
 ]
 
 
+def num(x):
+    """
+    Format a number the way NetLogo writes them. Plain decimal only: the
+    widget reader cannot parse scientific notation, so repr()'s "4.32e-05"
+    silently breaks the whole interface section.
+    """
+    if isinstance(x, int) or float(x).is_integer():
+        return str(int(x))
+    return f"{x:.10f}".rstrip("0")
+
+
 def build_interface():
     w = []
+    # Field order and geometry mirror a stock NetLogo 6.4 model: 51x51 patches
+    # at 10 px, so the pixel extents must be 518 x 519 including the border.
     w.append("\n".join([
-        "GRAPHICS-WINDOW", "365", "10", "883", "529", "-1", "-1", "10.0", "1",
-        "10", "1", "1", "1", "0", "1", "1", "1",
-        "0", "50", "0", "50", "1", "1", "1", "months", "30.0"]))
+        "GRAPHICS-WINDOW", "355", "10", "873", "529", "-1", "-1", "10.0", "1",
+        "14", "1", "1", "1", "0", "1", "1", "1",
+        "-25", "25", "-25", "25", "1", "1", "1", "months", "30.0"]))
 
     def button(x1, y1, x2, y2, label, code, forever):
         return "\n".join([
@@ -940,9 +953,11 @@ def build_interface():
 
     y = 58
     for name, lo, inc, hi, val, units in SLIDERS:
+        # an empty units field would emit a blank line and split the widget
+        units = units or "NIL"
         w.append("\n".join([
-            "SLIDER", "10", str(y), "355", str(y + 33), name, name,
-            str(lo), str(hi), str(val), str(inc), "1", units, "HORIZONTAL"]))
+            "SLIDER", "10", str(y), "345", str(y + 33), name, name,
+            num(lo), num(hi), num(val), num(inc), "1", units, "HORIZONTAL"]))
         y += 36
 
     mx, my = 895, 10
@@ -1240,7 +1255,16 @@ def build(system):
         LINK_SHAPES,
         "1",
     ]
-    return "\n@#$#@#$#@\n".join(parts) + "\n@#$#@#$#@\n"
+    # A .nlogo file is a run of sections each terminated by a separator line.
+    # An EMPTY section contributes no line at all, so two separators end up
+    # adjacent; writing a blank line instead shifts every later section and
+    # NetLogo then fails to parse the interface.
+    out = []
+    for part in parts:
+        if part:
+            out.append(part.rstrip("\n") + "\n")
+        out.append("@#$#@#$#@\n")
+    return "".join(out)
 
 
 if __name__ == "__main__":

@@ -216,11 +216,21 @@ the same constants, and that is where every number quoted above comes from.
 
 The `.nlogo` files pass `validation/check_nlogo.py`, which checks bracket and
 parenthesis balance, that every procedure is closed, that no identifier is used
-without being defined by a declaration or a slider, that slider defaults sit
-inside their ranges, and that the file's section layout is well formed. That is
-real verification but it is not execution: it cannot catch a runtime error or a
-semantic mistake. **Open them in NetLogo and check the behaviour before relying
-on results from the `.nlogo` files themselves.**
+without being defined by a declaration or a slider, and that slider defaults sit
+inside their ranges. It also validates the file *format* against a genuine
+NetLogo 6.4 model (`Wolf Sheep Predation.nlogo`, read from NetLogo's own Sample
+Models): every widget block must have the exact line count that widget type
+occupies, empty sections must be adjacent separator lines rather than blank
+lines, slider values must avoid scientific notation, and the view's pixel
+extents must match its patch count. A first release of these files failed to
+open because two sliders had an empty units field, which writes a blank line
+inside the widget block and splits it in two; that class of error is what this
+check now catches.
+
+That is real verification, but it is still not execution: it cannot catch a
+runtime error or a semantic mistake in the model logic. **Open them in NetLogo
+and check the behaviour before relying on results from the `.nlogo` files
+themselves.**
 
 Beyond that:
 

@@ -804,18 +804,17 @@ to set-appearance
       [ set color ifelse-value (any? my-marriages) [ pink ] [ violet ] ]
   ]
 end
-
 @#$#@#$#@
 GRAPHICS-WINDOW
-365
+355
 10
-883
+873
 529
 -1
 -1
 10.0
 1
-10
+14
 1
 1
 1
@@ -823,10 +822,10 @@ GRAPHICS-WINDOW
 1
 1
 1
-0
-50
-0
-50
+-25
+25
+-25
+25
 1
 1
 1
@@ -887,7 +886,7 @@ NIL
 SLIDER
 10
 58
-355
+345
 91
 initial-population
 initial-population
@@ -902,7 +901,7 @@ HORIZONTAL
 SLIDER
 10
 94
-355
+345
 127
 patch-carrying-capacity
 patch-carrying-capacity
@@ -917,7 +916,7 @@ HORIZONTAL
 SLIDER
 10
 130
-355
+345
 163
 regrowth-rate
 regrowth-rate
@@ -932,7 +931,7 @@ HORIZONTAL
 SLIDER
 10
 166
-355
+345
 199
 seasonal-amplitude
 seasonal-amplitude
@@ -947,7 +946,7 @@ HORIZONTAL
 SLIDER
 10
 202
-355
+345
 235
 droughts-per-century
 droughts-per-century
@@ -962,7 +961,7 @@ HORIZONTAL
 SLIDER
 10
 238
-355
+345
 271
 drought-severity
 drought-severity
@@ -977,7 +976,7 @@ HORIZONTAL
 SLIDER
 10
 274
-355
+345
 307
 forage-radius
 forage-radius
@@ -992,7 +991,7 @@ HORIZONTAL
 SLIDER
 10
 310
-355
+345
 343
 move-radius
 move-radius
@@ -1007,7 +1006,7 @@ HORIZONTAL
 SLIDER
 10
 346
-355
+345
 379
 half-saturation-fraction
 half-saturation-fraction
@@ -1022,12 +1021,12 @@ HORIZONTAL
 SLIDER
 10
 382
-355
+345
 415
 camp-move-gain
 camp-move-gain
-1.0
-2.0
+1
+2
 1.15
 0.05
 1
@@ -1037,7 +1036,7 @@ HORIZONTAL
 SLIDER
 10
 418
-355
+345
 451
 camp-target
 camp-target
@@ -1052,7 +1051,7 @@ HORIZONTAL
 SLIDER
 10
 454
-355
+345
 487
 camp-max
 camp-max
@@ -1067,7 +1066,7 @@ HORIZONTAL
 SLIDER
 10
 490
-355
+345
 523
 camp-min
 camp-min
@@ -1082,7 +1081,7 @@ HORIZONTAL
 SLIDER
 10
 526
-355
+345
 559
 peak-production-male
 peak-production-male
@@ -1097,7 +1096,7 @@ HORIZONTAL
 SLIDER
 10
 562
-355
+345
 595
 peak-production-female
 peak-production-female
@@ -1112,7 +1111,7 @@ HORIZONTAL
 SLIDER
 10
 598
-355
+345
 631
 production-rise-mid
 production-rise-mid
@@ -1127,7 +1126,7 @@ HORIZONTAL
 SLIDER
 10
 634
-355
+345
 667
 childcare-production-cost
 childcare-production-cost
@@ -1142,7 +1141,7 @@ HORIZONTAL
 SLIDER
 10
 670
-355
+345
 703
 reserve-days
 reserve-days
@@ -1157,7 +1156,7 @@ HORIZONTAL
 SLIDER
 10
 706
-355
+345
 739
 starvation-onset
 starvation-onset
@@ -1172,7 +1171,7 @@ HORIZONTAL
 SLIDER
 10
 742
-355
+345
 775
 starvation-beta
 starvation-beta
@@ -1187,7 +1186,7 @@ HORIZONTAL
 SLIDER
 10
 778
-355
+345
 811
 child-starvation-extra
 child-starvation-extra
@@ -1202,7 +1201,7 @@ HORIZONTAL
 SLIDER
 10
 814
-355
+345
 847
 milk-synthesis-cost
 milk-synthesis-cost
@@ -1217,7 +1216,7 @@ HORIZONTAL
 SLIDER
 10
 850
-355
+345
 883
 menarche-age
 menarche-age
@@ -1232,7 +1231,7 @@ HORIZONTAL
 SLIDER
 10
 886
-355
+345
 919
 menopause-age
 menopause-age
@@ -1247,7 +1246,7 @@ HORIZONTAL
 SLIDER
 10
 922
-355
+345
 955
 adolescent-subfecundity
 adolescent-subfecundity
@@ -1262,7 +1261,7 @@ HORIZONTAL
 SLIDER
 10
 958
-355
+345
 991
 peak-fecundability
 peak-fecundability
@@ -1277,7 +1276,7 @@ HORIZONTAL
 SLIDER
 10
 994
-355
+345
 1027
 gestation-months
 gestation-months
@@ -1292,7 +1291,7 @@ HORIZONTAL
 SLIDER
 10
 1030
-355
+345
 1063
 lactational-amenorrhea
 lactational-amenorrhea
@@ -1307,7 +1306,7 @@ HORIZONTAL
 SLIDER
 10
 1066
-355
+345
 1099
 stillbirth-rate
 stillbirth-rate
@@ -1322,7 +1321,7 @@ HORIZONTAL
 SLIDER
 10
 1102
-355
+345
 1135
 maternal-mortality
 maternal-mortality
@@ -1337,7 +1336,7 @@ HORIZONTAL
 SLIDER
 10
 1138
-355
+345
 1171
 male-marriage-age
 male-marriage-age
@@ -1352,7 +1351,7 @@ HORIZONTAL
 SLIDER
 10
 1174
-355
+345
 1207
 female-marriage-age
 female-marriage-age
@@ -1367,7 +1366,7 @@ HORIZONTAL
 SLIDER
 10
 1210
-355
+345
 1243
 bride-price
 bride-price
@@ -1382,7 +1381,7 @@ HORIZONTAL
 SLIDER
 10
 1246
-355
+345
 1279
 max-wealth-days
 max-wealth-days
@@ -1397,7 +1396,7 @@ HORIZONTAL
 SLIDER
 10
 1282
-355
+345
 1315
 wealth-decay
 wealth-decay
@@ -1412,7 +1411,7 @@ HORIZONTAL
 SLIDER
 10
 1318
-355
+345
 1351
 wealth-inheritance
 wealth-inheritance
@@ -1427,13 +1426,13 @@ HORIZONTAL
 SLIDER
 10
 1354
-355
+345
 1387
 co-wife-penalty
 co-wife-penalty
 0
 1
-0.0
+0
 0.05
 1
 0=auction 1=Orians
@@ -1442,7 +1441,7 @@ HORIZONTAL
 SLIDER
 10
 1390
-355
+345
 1423
 landscape-heterogeneity
 landscape-heterogeneity
@@ -1457,7 +1456,7 @@ HORIZONTAL
 SLIDER
 10
 1426
-355
+345
 1459
 remarriage-delay
 remarriage-delay
@@ -1472,7 +1471,7 @@ HORIZONTAL
 SLIDER
 10
 1462
-355
+345
 1495
 mate-search-radius
 mate-search-radius
@@ -1487,7 +1486,7 @@ HORIZONTAL
 SLIDER
 10
 1498
-355
+345
 1531
 band-sharing
 band-sharing
@@ -1502,7 +1501,7 @@ HORIZONTAL
 SLIDER
 10
 1534
-355
+345
 1567
 bachelor-risk
 bachelor-risk
@@ -1517,7 +1516,7 @@ HORIZONTAL
 SLIDER
 10
 1570
-355
+345
 1603
 max-wives
 max-wives
@@ -1532,7 +1531,7 @@ HORIZONTAL
 SLIDER
 10
 1606
-355
+345
 1639
 mutation-sd
 mutation-sd
@@ -1547,7 +1546,7 @@ HORIZONTAL
 SLIDER
 10
 1642
-355
+345
 1675
 efficiency-min
 efficiency-min
@@ -1562,13 +1561,13 @@ HORIZONTAL
 SLIDER
 10
 1678
-355
+345
 1711
 efficiency-max
 efficiency-max
 1
 3
-2.0
+2
 0.05
 1
 x
@@ -1577,7 +1576,7 @@ HORIZONTAL
 SLIDER
 10
 1714
-355
+345
 1747
 siler-a1
 siler-a1
@@ -1592,7 +1591,7 @@ HORIZONTAL
 SLIDER
 10
 1750
-355
+345
 1783
 siler-b1
 siler-b1
@@ -1601,13 +1600,13 @@ siler-b1
 1.131
 0.01
 1
-
+NIL
 HORIZONTAL
 
 SLIDER
 10
 1786
-355
+345
 1819
 siler-a2
 siler-a2
@@ -1622,14 +1621,14 @@ HORIZONTAL
 SLIDER
 10
 1822
-355
+345
 1855
 siler-a3
 siler-a3
 0
 0.001
-4.32e-05
-1e-05
+0.0000432
+0.00001
 1
 per yr
 HORIZONTAL
@@ -1637,7 +1636,7 @@ HORIZONTAL
 SLIDER
 10
 1858
-355
+345
 1891
 siler-b3
 siler-b3
@@ -1646,7 +1645,7 @@ siler-b3
 0.1075
 0.0005
 1
-
+NIL
 HORIZONTAL
 
 MONITOR
@@ -2057,7 +2056,6 @@ theorem. *Theoretical Population Biology* 9:129-136.
 
 Y-chromosome bottleneck: Karmin, M. et al. (2015) A recent bottleneck of Y
 chromosome diversity. *Genome Research* 25:459-466.
-
 @#$#@#$#@
 circle
 false
@@ -2088,7 +2086,6 @@ NetLogo 6.4.0
 setup
 repeat 1200 [ go ]
 @#$#@#$#@
-
 @#$#@#$#@
 <experiments>
   <experiment name="mating-system-comparison" repetitions="10" runMetricsEveryStep="false">
@@ -2147,7 +2144,6 @@ repeat 1200 [ go ]
   </experiment>
 </experiments>
 @#$#@#$#@
-
 @#$#@#$#@
 default
 0.0
