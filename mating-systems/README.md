@@ -203,18 +203,32 @@ around, almost no woman prefers a half share. Polygyny only takes hold as the
 penalty falls towards 0, a bridewealth auction in which the bride's kin take the
 highest bidder and her co-wife burden is not their problem. Sweeping it:
 
-| `co-wife-penalty` | mean wives per married man | married men with 2+ wives |
-|---|---|---|
-| 1.00 (strict Orians) | 1.00 | 0% |
-| 0.35 | 1.03 | 3% |
-| 0.20 | 1.05 | 5% |
-| 0.10 | 1.13 | 13% |
-| 0.00 (bridewealth auction) | 1.28 | 26% |
+| `co-wife-penalty` | wives per married man | married men with 2+ wives | most wives held |
+|---|---:|---:|---:|
+| 1.00 (strict Orians) | 1.01 | 1% | 1.3 |
+| 0.50 | 1.04 | 4% | 1.7 |
+| 0.25 | 1.06 | 6% | 2.0 |
+| 0.10 | 1.35 | 34% | 2.0 |
+| 0.00 (bridewealth auction) | 2.22 | 59% | 6.0 |
 
-The default is 0.0, which reproduces the levels seen in polygynous societies
-(typically 25–35% of married men). The reading is that polygyny is not really a
-consequence of male wealth alone; it needs marriage decisions to sit with
+Note how sharply non-linear that is: the whole transition happens below 0.25.
+The default is 0.0, which reproduces the levels seen in strongly polygynous
+societies. The reading is that polygyny is not a consequence of male wealth
+alone — even with wealth compounding, female choice under the strict threshold
+holds it to 1% of married men. It also needs marriage decisions to sit with
 someone other than the bride.
+
+**3. Polygyny needs an economy that lets wealth compound.**
+Set `wealth-growth` to 0 and polygyny very nearly disappears even with the
+permissive marriage rule and a zero co-wife penalty. Food acquisition is capped
+by physical capability, so without compounding every prime-age man earns about
+the same, and women have nothing to sort on. Turning it up produces polygyny —
+but only up to a point: past about 1%/month every man reaches the wealth
+ceiling, inequality collapses (a Gini of 0.02 at 3%/month) and polygyny weakens
+again. Polygyny is a phenomenon of *intermediate* inequality, and the model
+reaches it only through an economy of breeding herds rather than gathered food.
+That is consistent with the ethnographic record, where the strongly polygynous
+societies are pastoralists and farmers rather than foragers.
 
 ## Honest limitations
 
