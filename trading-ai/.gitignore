@@ -1,0 +1,7 @@
+data/raw/
+data/build/
+data/prices/
+data/reports/
+__pycache__/
+*.pyc
+.pytest_cache/

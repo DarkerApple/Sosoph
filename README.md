@@ -90,3 +90,12 @@ tools/check-chart.js  headless chart validator
 
 `window.sosoph` exposes the live `game`, `song`, `audio` and `renderer` for
 poking at from the console.
+
+## Also in this repo
+
+`trading-ai/` is an unrelated Python project that lives here for convenience: a
+research pipeline that turns the r/wallstreetbets post dump into a daily
+cross-sectional trading signal, fits a model walk-forward and backtests a
+top-K portfolio against honest baselines. See
+[`trading-ai/README.md`](trading-ai/README.md) — including its limitations
+section, which you should read before believing any number it prints.
