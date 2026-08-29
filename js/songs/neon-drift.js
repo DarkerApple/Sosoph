@@ -4,7 +4,7 @@
 // music and the chart: pitch drives lane choice, sustains become holds, and the
 // claps on beats 2 and 4 are the accents that become coloured notes.
 
-import { Composer, readMelody, gridWeight } from '../music.js';
+import { Composer, readMelody, gridWeight , assemble } from '../music.js';
 
 const BPM = 128;
 const BARS = 48;
@@ -167,23 +167,11 @@ export default function build() {
     c.H(c.at(28) + i, { layer: 'lead', pitch: [69, 72, 76, 72][i], weight: 0.9, hold: i === 3 ? 2 : 0 });
   }
 
-  return {
+  return assemble(c, {
     id: 'neon-drift',
     title: 'Neon Drift',
     artist: 'Sosoph Synth',
-    unit: 'Virtual Singer',
-    accent: '#37d6ff',
-    bpm: BPM,
-    bars: BARS,
-    beats: c.beats,
-    spb: c.spb,
-    events: c.events.sort((a, b) => a.t - b.t),
-    hits: c.hits,
-    duration: c.beats * c.spb + 3.2,
-    sections: SECTIONS.map((s) => ({
-      ...s,
-      start: s.bar * 4 * c.spb,
-      end: (s.bar + s.bars) * 4 * c.spb,
-    })),
-  };
+    genre: 'Synthwave',
+    tail: 3.2,
+  }, SECTIONS);
 }

@@ -286,6 +286,7 @@ function draw() {
   ctx.fillRect(left, 0, laneW * LANE_COUNT, h);
 
   const spb = state.def.spb;
+  const perBar = state.def.beatsPerBar || 4;
   const div = state.snap || 4;
   const step = spb / div;
   const first = Math.max(0, Math.floor(t0 / step));
@@ -295,7 +296,7 @@ function draw() {
     const y = yFor(t);
     if (y < -20 || y > h) continue;
     const beat = t / spb;
-    const onBar = Math.abs(beat % 4) < 1e-6;
+    const onBar = Math.abs(beat % perBar) < 1e-6;
     const onBeat = Math.abs(beat % 1) < 1e-6;
     ctx.fillStyle = onBar
       ? 'rgba(255,255,255,0.34)'
@@ -305,7 +306,7 @@ function draw() {
       ctx.fillStyle = 'rgba(255,255,255,0.42)';
       ctx.font = `700 10px ${FONT}`;
       ctx.textAlign = 'right';
-      ctx.fillText(String(Math.round(beat / 4) + 1), left - 10, y - 3);
+      ctx.fillText(String(Math.round(beat / perBar) + 1), left - 10, y - 3);
     }
   }
   ctx.restore();
@@ -357,7 +358,7 @@ function draw() {
     const cx = left + n.lane * laneW + laneW / 2;
     const col = noteRgb[n.color];
     ctx.fillStyle = rgba(col, 0.3);
-    roundRect(ctx, cx - laneW * 0.16, yTop, laneW * 0.32, yBot - yTop, 3);
+    roundRect(ctx, cx - laneW * 0.15, yTop, laneW * 0.3, yBot - yTop, 2);
     ctx.fill();
   }
 
@@ -406,26 +407,26 @@ function drawNote(n, y) {
   const cx = layout.left + n.lane * layout.laneW + layout.laneW / 2;
   drawNoteShape(cx, y, noteRgb[n.color], n.color !== PLAIN);
   if (n === state.selected) {
-    const w = layout.laneW * 0.8;
+    const w = layout.laneW * 0.76;
     ctx.strokeStyle = PLAYHEAD;
     ctx.lineWidth = 2;
-    ctx.strokeRect(cx - w / 2 - 3, y - 11, w + 6, 22);
+    ctx.strokeRect(cx - w / 2 - 3, y - 9, w + 6, 18);
   }
 }
 
 function drawNoteShape(cx, y, col, colored) {
-  const w = layout.laneW * 0.8;
-  const h = 15;
+  const w = layout.laneW * 0.76;
+  const h = 11;
   const grad = ctx.createLinearGradient(0, y - h / 2, 0, y + h / 2);
   grad.addColorStop(0, rgba(shade(col, colored ? 1.25 : 1), 1));
   grad.addColorStop(1, rgba(shade(col, colored ? 0.7 : 0.82), 1));
   ctx.fillStyle = grad;
-  roundRect(ctx, cx - w / 2, y - h / 2, w, h, 4);
+  roundRect(ctx, cx - w / 2, y - h / 2, w, h, 3);
   ctx.fill();
   if (colored) {
     ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = 2;
-    roundRect(ctx, cx - w / 2 + 1, y - h / 2 + 1, w - 2, h - 2, 3);
+    ctx.lineWidth = 1.6;
+    roundRect(ctx, cx - w / 2 + 0.8, y - h / 2 + 0.8, w - 1.6, h - 1.6, 2);
     ctx.stroke();
   }
   if (colored) {
@@ -434,9 +435,9 @@ function drawNoteShape(cx, y, col, colored) {
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     ctx.beginPath();
-    ctx.moveTo(cx - 4, y - 2);
-    ctx.lineTo(cx, y + 2.5);
-    ctx.lineTo(cx + 4, y - 2);
+    ctx.moveTo(cx - 3.2, y - 1.6);
+    ctx.lineTo(cx, y + 1.8);
+    ctx.lineTo(cx + 3.2, y - 1.6);
     ctx.stroke();
   }
 }

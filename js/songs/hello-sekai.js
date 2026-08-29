@@ -3,7 +3,7 @@
 // The friendliest chart in the set: a piano hook doubled by bells over a
 // I–V–vi–IV loop, with claps on 2 and 4 that become the coloured accents.
 
-import { Composer, readMelody, gridWeight, voice, chordOn, SCALES } from '../music.js';
+import { Composer, readMelody, gridWeight, voice, chordOn, SCALES , assemble } from '../music.js';
 
 const BPM = 140;
 const BARS = 48;
@@ -140,19 +140,11 @@ export default function build() {
     c.H(c.at(33) + i, { layer: 'lead', pitch: [79, 76, 72, 74][i], weight: 0.88, hold: i === 3 ? 2 : 0, accent: i === 1 });
   }
 
-  return {
+  return assemble(c, {
     id: 'hello-sekai',
     title: 'Hello, Sekai',
     artist: 'Sosoph Synth',
-    unit: 'Leo/need',
-    accent: '#4d9cff',
-    bpm: BPM,
-    bars: BARS,
-    beats: c.beats,
-    spb: c.spb,
-    events: c.events.sort((a, b) => a.t - b.t),
-    hits: c.hits,
-    duration: c.beats * c.spb + 3,
-    sections: SECTIONS.map((s) => ({ ...s, start: s.bar * 4 * c.spb, end: (s.bar + s.bars) * 4 * c.spb })),
-  };
+    genre: 'Pop',
+    tail: 3,
+  }, SECTIONS);
 }

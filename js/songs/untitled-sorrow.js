@@ -4,7 +4,7 @@
 // in the verses that doubles into straight sixteenths for the chorus. The chart
 // leans on the piano, so its hardest passages are the ones that sound hardest.
 
-import { Composer, readMelody, gridWeight } from '../music.js';
+import { Composer, readMelody, gridWeight , assemble } from '../music.js';
 
 const BPM = 172;
 const BARS = 64;
@@ -156,19 +156,11 @@ export default function build() {
     );
   }
 
-  return {
+  return assemble(c, {
     id: 'untitled-sorrow',
     title: 'Untitled Sorrow',
     artist: 'Sosoph Synth',
-    unit: 'Nightcord at 25:00',
-    accent: '#b45cf0',
-    bpm: BPM,
-    bars: BARS,
-    beats: c.beats,
-    spb: c.spb,
-    events: c.events.sort((a, b) => a.t - b.t),
-    hits: c.hits,
-    duration: c.beats * c.spb + 3,
-    sections: SECTIONS.map((s) => ({ ...s, start: s.bar * 4 * c.spb, end: (s.bar + s.bars) * 4 * c.spb })),
-  };
+    genre: 'Piano Rock',
+    tail: 3,
+  }, SECTIONS);
 }

@@ -33,7 +33,26 @@
 
         <div class="col">
           <h1 class="page-title">Choose a song</h1>
+
+          <div class="toolbar">
+            <input type="search" id="f-search" placeholder="Search title or genre" aria-label="Search songs" />
+            <div class="toolbar-selects">
+              <label class="pick"><span>Genre</span><select id="f-genre"></select></label>
+              <label class="pick"><span>Difficulty</span><select id="f-diff"></select></label>
+              <label class="pick"><span>Status</span><select id="f-status"></select></label>
+              <label class="pick"><span>Sort</span><select id="f-sort"></select></label>
+              <button class="btn small dir" id="f-dir" type="button" aria-label="Sort direction">↑</button>
+              <label class="check"><input type="checkbox" id="f-group" /> Group by level</label>
+            </div>
+          </div>
+
+          <div class="list-status">
+            <span id="f-count">—</span>
+            <button class="btn small" id="f-reset" type="button" hidden>Clear filters</button>
+          </div>
+
           <ul class="song-list" id="song-list" role="listbox" aria-label="Songs"></ul>
+          <p class="empty" id="f-empty" hidden>No songs match these filters.</p>
         </div>
 
         <div class="col side">
@@ -60,7 +79,7 @@
           <div class="panel keys-panel">
             <h3 class="label">Controls</h3>
             <ul class="legend" id="legend"></ul>
-            <p class="keys-note">Each colour key sits under the lane its notes usually fall in, so a coloured note means the same finger, one row down. <kbd>Esc</kbd> pauses.</p>
+            <p class="keys-note">Each colour key sits under the lane its notes fall in, so a coloured note means the same finger, one row down. Colour comes in phrases — your hand drops to the bottom row for a run of notes and comes back up. <kbd>Esc</kbd> pauses.</p>
           </div>
         </div>
 

@@ -4,7 +4,7 @@
 // riff runs in sixteenths, which is where EXPERT gets its streams; lower
 // difficulties thin the same riff out rather than replacing it.
 
-import { Composer, readMelody, gridWeight } from '../music.js';
+import { Composer, readMelody, gridWeight , assemble } from '../music.js';
 
 const BPM = 168;
 const BARS = 64;
@@ -158,19 +158,11 @@ export default function build() {
     c.H(b0 + 3, { layer: 'lead', pitch: 71, weight: 0.86, accent: true });
   }
 
-  return {
+  return assemble(c, {
     id: 'vivid-impact',
     title: 'Vivid Impact',
     artist: 'Sosoph Synth',
-    unit: 'Vivid BAD SQUAD',
-    accent: '#ff4d6d',
-    bpm: BPM,
-    bars: BARS,
-    beats: c.beats,
-    spb: c.spb,
-    events: c.events.sort((a, b) => a.t - b.t),
-    hits: c.hits,
-    duration: c.beats * c.spb + 3,
-    sections: SECTIONS.map((s) => ({ ...s, start: s.bar * 4 * c.spb, end: (s.bar + s.bars) * 4 * c.spb })),
-  };
+    genre: 'Big Room',
+    tail: 3,
+  }, SECTIONS);
 }

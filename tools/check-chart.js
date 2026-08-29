@@ -5,18 +5,18 @@
 // game: asking a single finger to change key rows faster than it can move.
 
 import { catalogue, songDef, chartFor, SONG_ORDER } from '../js/songs/index.js';
-import { PROFILES, RELEASE_GAP_BEATS } from '../js/chart.js';
-import { LANE_COUNT, homeLaneOf, PLAIN, NOTE_COLORS } from '../js/theme.js';
+import { PROFILES, RELEASE_GAP_BEATS, fingerOf, rowOf } from '../js/chart.js';
+import { LANE_COUNT, NOTE_COLORS } from '../js/theme.js';
 
 const errors = [];
 const warnings = [];
 
-/** The physical finger a note needs; lane keys and colour keys share four. */
-const fingerOf = (n) => (n.color === PLAIN ? n.lane : homeLaneOf(n.color));
-const rowOf = (n) => (n.color === PLAIN ? 0 : 1);
+// Coloured holds are intentional: a phrase that moves to the bottom row takes
+// its sustains with it, and holding a colour key is no harder than holding a
+// lane key. What must hold is the row-switch timing, checked below.
 
-/** The lowest row-change gap any difficulty allows, as an absolute floor. */
-const MIN_ROW_SWITCH = Math.min(...Object.values(PROFILES).map((p) => p.rowSwitchSec));
+/** How long a finger needs to change rows, per difficulty. */
+const rowSwitchFor = (diff) => (PROFILES[diff] || PROFILES.normal).rowSwitchSec;
 
 function checkChart(def, diff, chart) {
   const where = `${def.title}/${diff}`;
@@ -35,7 +35,6 @@ function checkChart(def, diff, chart) {
     if (n.color < 0 || n.color > NOTE_COLORS.length) fail(`bad colour ${n.color} at ${at(n.t)}`);
     if (n.t < 0) fail(`negative time at index ${i}`);
     if (n.t + n.dur > def.duration) fail(`note past the song end at ${at(n.t)}`);
-    if (n.isHold && n.color !== PLAIN) warn(`coloured hold at ${at(n.t)}`);
   }
 
   // --- per-lane overlap and release room -----------------------------------
@@ -62,15 +61,16 @@ function checkChart(def, diff, chart) {
   // --- one finger, one job -------------------------------------------------
   // Two notes on the same finger in the same instant are unplayable, and a row
   // change needs time for the finger to travel.
+  const needed = rowSwitchFor(diff);
   const fingerFree = new Array(LANE_COUNT).fill(-Infinity);
   const fingerRow = new Array(LANE_COUNT).fill(0);
   for (const n of notes) {
     const f = fingerOf(n);
     const row = rowOf(n);
-    if (fingerRow[f] !== row && n.t - fingerFree[f] < MIN_ROW_SWITCH - 1e-6) {
+    if (fingerRow[f] !== row && n.t - fingerFree[f] < needed - 1e-6) {
       fail(
         `finger ${f} has ${(n.t - fingerFree[f]) * 1000 | 0}ms to change rows at ${at(n.t)} ` +
-        `(needs ${MIN_ROW_SWITCH * 1000}ms)`
+        `(needs ${Math.round(needed * 1000)}ms)`
       );
     }
     fingerFree[f] = n.t + n.dur;
@@ -114,7 +114,14 @@ function checkChart(def, diff, chart) {
   }
   if (worst > 6) warn(`${worst.toFixed(1)}s with no notes after ${at(worstAt)}`);
 
-  return { peak, minGap, holds: notes.filter((n) => n.isHold).length };
+  let switches = 0;
+  const seenRow = new Array(LANE_COUNT).fill(0);
+  for (const n of notes) {
+    const f = fingerOf(n);
+    if (seenRow[f] !== rowOf(n)) { switches++; seenRow[f] = rowOf(n); }
+  }
+
+  return { peak, minGap, switches, holds: notes.filter((n) => n.isHold).length };
 }
 
 // ---------------------------------------------------------------- report ---
@@ -132,17 +139,31 @@ for (const entry of catalogue()) {
     for (const n of chart.notes) spread[n.lane]++;
     console.log(
       `  ${pad(diff, 7)} lv${num(chart.level, 2)}  ${num(chart.notes.length, 4)} notes  ` +
-      `${num(st.holds ?? 0, 3)} holds  ${num(chart.colored, 3)} colour  ` +
-      `peak ${num(st.peak ?? 0, 2)}/s  min gap ${num(((st.minGap ?? 0) * 1000) | 0, 4)}ms  ` +
+      `${num(st.holds ?? 0, 3)} holds  ${num(chart.colored, 3)} colour ` +
+      `(${num(Math.round((chart.colored / chart.notes.length) * 100), 2)}%)  ` +
+      `peak ${num(st.peak ?? 0, 2)}/s  ${num(st.switches ?? 0, 3)} row switches  ` +
       `lanes ${spread.join('/')}`
     );
   }
 }
 
-// Every difficulty a song advertises must actually exist.
+// Every difficulty a song advertises must actually exist, and must be worth
+// advertising: a tier that produces nearly the same chart as the one below it
+// is a wasted entry in the song list.
 for (const { id, difficulties } of SONG_ORDER) {
   for (const d of difficulties) {
     if (!PROFILES[d]) errors.push(`${id}: unknown difficulty "${d}"`);
+  }
+  for (let i = 1; i < difficulties.length; i++) {
+    const lo = chartFor(id, difficulties[i - 1]);
+    const hi = chartFor(id, difficulties[i]);
+    const growth = (hi.notes.length - lo.notes.length) / Math.max(1, lo.notes.length);
+    if (growth < 0.08 && hi.level <= lo.level) {
+      warnings.push(
+        `${id}: ${difficulties[i]} adds only ${Math.round(growth * 100)}% over ` +
+        `${difficulties[i - 1]} (${lo.notes.length} -> ${hi.notes.length} notes, lv${lo.level} -> lv${hi.level})`
+      );
+    }
   }
 }
 

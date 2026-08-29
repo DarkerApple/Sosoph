@@ -4,7 +4,7 @@
 // that leaves space between phrases. Long sustains make this the best song to
 // learn hold notes on.
 
-import { Composer, readMelody, gridWeight } from '../music.js';
+import { Composer, readMelody, gridWeight , assemble } from '../music.js';
 
 const BPM = 96;
 const BARS = 32;
@@ -114,19 +114,11 @@ export default function build() {
     c.H(c.at(bar) + beat, { layer: 'lead', pitch, weight: 0.92, hold, accent: i === 1 })
   );
 
-  return {
+  return assemble(c, {
     id: 'marmalade-sky',
     title: 'Marmalade Sky',
     artist: 'Sosoph Synth',
-    unit: 'MORE MORE JUMP!',
-    accent: '#3ddc84',
-    bpm: BPM,
-    bars: BARS,
-    beats: c.beats,
-    spb: c.spb,
-    events: c.events.sort((a, b) => a.t - b.t),
-    hits: c.hits,
-    duration: c.beats * c.spb + 3,
-    sections: SECTIONS.map((s) => ({ ...s, start: s.bar * 4 * c.spb, end: (s.bar + s.bars) * 4 * c.spb })),
-  };
+    genre: 'Lo-fi',
+    tail: 3,
+  }, SECTIONS);
 }

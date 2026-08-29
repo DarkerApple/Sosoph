@@ -88,8 +88,8 @@ export class Renderer {
     };
     this.pf.travel = this.pf.receptorY - this.pf.spawnY;
 
-    this.noteW = this.pf.laneW * 0.84;
-    this.noteH = clamp(this.pf.laneW * 0.22, 18, 30);
+    this.noteW = this.pf.laneW * 0.76;
+    this.noteH = clamp(this.pf.laneW * 0.13, 11, 18);
     this.ui = w < 560 ? 0.82 : w < 780 ? 0.92 : 1;
     this.hudPad = clamp(w * 0.025, 16, 32);
 
@@ -121,7 +121,7 @@ export class Renderer {
     c.height = Math.ceil((h + pad * 2) * this.dpr);
     const g = c.getContext('2d');
     g.scale(this.dpr, this.dpr);
-    const r = 5;
+    const r = 3;
 
     const grad = g.createLinearGradient(0, pad, 0, pad + h);
     grad.addColorStop(0, rgba(shade(col, isColored ? 1.25 : 1), 1));
@@ -135,17 +135,17 @@ export class Renderer {
     // wearing a colour rather than as a different, dimmer shape.
     if (isColored) {
       g.strokeStyle = '#ffffff';
-      g.lineWidth = 2.5;
-      roundRect(g, pad + 1.25, pad + 1.25, w - 2.5, h - 2.5, r - 1);
+      g.lineWidth = 2;
+      roundRect(g, pad + 1, pad + 1, w - 2, h - 2, Math.max(1, r - 1));
       g.stroke();
     }
 
     if (isColored) {
       const cx = pad + w / 2;
       const cy = pad + h / 2;
-      const k = h * 0.22;
+      const k = h * 0.3;
       g.strokeStyle = '#ffffff';
-      g.lineWidth = 2.4;
+      g.lineWidth = 1.8;
       g.lineCap = 'round';
       g.lineJoin = 'round';
       g.beginPath();
@@ -260,7 +260,7 @@ export class Renderer {
 
   _drawBarLines(ctx, g, t) {
     const { left, width, receptorY } = this.pf;
-    const barLen = g.song.spb * 4;
+    const barLen = g.song.spb * (g.song.beatsPerBar || 4);
     const travel = g.travelTime;
     const first = Math.floor(t / barLen);
     ctx.fillStyle = 'rgba(255,255,255,0.13)';
@@ -275,7 +275,7 @@ export class Renderer {
     const { left, laneW, receptorY } = this.pf;
     const travel = g.travelTime;
     const notes = g.song.notes;
-    const bw = this.noteW * 0.5;
+    const bw = this.noteW * 0.36;
 
     for (let i = g.renderFrom; i < notes.length; i++) {
       const n = notes[i];
@@ -294,7 +294,7 @@ export class Renderer {
 
       const col = n.holdBroken ? [104, 112, 128] : this.noteRgb[n.play];
       ctx.fillStyle = rgba(col, n.holdBroken ? 0.2 : n.holdActive ? 0.6 : 0.42);
-      roundRect(ctx, cx - bw / 2, top, bw, bottom - top, 3);
+      roundRect(ctx, cx - bw / 2, top, bw, bottom - top, 2);
       ctx.fill();
     }
   }

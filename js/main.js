@@ -15,6 +15,9 @@ import {
   NOTE_COLORS, PLAIN_NOTE_HEX, LANE_COUNT, difficultyMeta, keyTable, keyLabel,
   GRADE_HEX, UI,
 } from './theme.js';
+import {
+  DEFAULT_VIEW, SORTS, STATUSES, buildList, genresOf, difficultyOptions,
+} from './library.js';
 import { load, save } from './storage.js';
 import { fmtScore, fmtTime, clamp } from './util.js';
 
@@ -98,7 +101,11 @@ function applySettings() {
 // ------------------------------------------------------------ song select --
 
 const SONGS = catalogue();
-let songIndex = 0;
+const view = load('view.v1', DEFAULT_VIEW);
+/** The list as the filters currently leave it, flattened for keyboard nav. */
+let visible = SONGS;
+/** Selection is by id, so it survives the list being refiltered or resorted. */
+let currentId = SONGS[0].id;
 let diffIndex = 1;
 
 /** Difficulty tabs for a song, with the editor's custom chart appended. */
@@ -117,7 +124,7 @@ function difficultiesOf(entry) {
   return list;
 }
 
-const currentEntry = () => SONGS[songIndex];
+const currentEntry = () => SONGS.find((s) => s.id === currentId) || SONGS[0];
 const currentDiff = () => {
   const list = difficultiesOf(currentEntry());
   return list[clamp(diffIndex, 0, list.length - 1)];
@@ -134,30 +141,49 @@ function badge(diff) {
 
 function renderSongList() {
   const list = $('song-list');
+  const { shown, total, groups } = buildList(SONGS, view, best);
+  visible = groups.flatMap((g) => g.songs);
   list.replaceChildren();
-  SONGS.forEach((s, i) => {
-    const li = document.createElement('li');
-    li.className = 'song' + (i === songIndex ? ' is-current' : '');
-    li.setAttribute('role', 'option');
-    li.setAttribute('aria-selected', String(i === songIndex));
 
-    const main = document.createElement('div');
-    const title = document.createElement('div');
-    title.className = 'song-title';
-    title.textContent = s.title;
-    const sub = document.createElement('div');
-    sub.className = 'song-sub';
-    sub.textContent = `${s.unit} · ${s.bpm} BPM · ${fmtTime(s.duration)}`;
-    main.append(title, sub);
+  for (const group of groups) {
+    if (group.title) {
+      const head = document.createElement('li');
+      head.className = 'group-head';
+      head.setAttribute('role', 'presentation');
+      head.textContent = group.title;
+      list.append(head);
+    }
+    for (const s of group.songs) {
+      const on = s.id === currentId;
+      const li = document.createElement('li');
+      li.className = 'song' + (on ? ' is-current' : '');
+      li.setAttribute('role', 'option');
+      li.setAttribute('aria-selected', String(on));
 
-    const badges = document.createElement('div');
-    badges.className = 'badges';
-    for (const d of difficultiesOf(s)) badges.append(badge(d));
+      const main = document.createElement('div');
+      const title = document.createElement('div');
+      title.className = 'song-title';
+      title.textContent = s.title;
+      const sub = document.createElement('div');
+      sub.className = 'song-sub';
+      sub.textContent = `${s.genre} · ${s.bpm} BPM · ${fmtTime(s.duration)}`;
+      main.append(title, sub);
 
-    li.append(main, badges);
-    li.addEventListener('click', () => selectSong(i));
-    list.append(li);
-  });
+      const badges = document.createElement('div');
+      badges.className = 'badges';
+      for (const d of difficultiesOf(s)) badges.append(badge(d));
+
+      li.append(main, badges);
+      li.addEventListener('click', () => selectSong(s.id));
+      list.append(li);
+    }
+  }
+
+  $('f-empty').hidden = shown > 0;
+  $('f-count').textContent = shown === total
+    ? `${total} songs`
+    : `${shown} of ${total} songs`;
+  $('f-reset').hidden = !isFiltered();
 }
 
 function renderDetail() {
@@ -166,7 +192,7 @@ function renderDetail() {
   diffIndex = clamp(diffIndex, 0, diffs.length - 1);
   const d = diffs[diffIndex];
 
-  $('d-unit').textContent = s.unit;
+  $('d-unit').textContent = s.genre;
   $('d-title').textContent = s.title;
   $('d-artist').textContent = s.artist;
 
@@ -194,14 +220,115 @@ function renderDetail() {
     : 'Not played yet';
 }
 
-function selectSong(i) {
-  if (i === songIndex) return;
-  songIndex = clamp(i, 0, SONGS.length - 1);
+function selectSong(id) {
+  if (id === currentId || !id) return;
+  currentId = id;
   renderSongList();
   renderDetail();
   blip('move');
-  const el = document.querySelectorAll('.song')[songIndex];
+  const i = visible.findIndex((s) => s.id === id);
+  const el = document.querySelectorAll('.song')[i];
   if (el) el.scrollIntoView({ block: 'nearest' });
+}
+
+/** Step through the visible list, which is what the arrow keys act on. */
+function stepSong(delta) {
+  if (!visible.length) return;
+  const i = visible.findIndex((s) => s.id === currentId);
+  const next = clamp((i < 0 ? 0 : i) + delta, 0, visible.length - 1);
+  selectSong(visible[next].id);
+}
+
+// --------------------------------------------------------------- filters ---
+
+const isFiltered = () =>
+  view.q !== '' || view.genre !== 'all' || view.difficulty !== 'any' || view.status !== 'all';
+
+function option(value, label) {
+  const o = document.createElement('option');
+  o.value = value;
+  o.textContent = label;
+  return o;
+}
+
+function initFilters() {
+  const genre = $('f-genre');
+  genre.append(option('all', 'All genres'));
+  for (const g of genresOf(SONGS)) genre.append(option(g, g));
+
+  const diff = $('f-diff');
+  diff.append(option('any', 'Any'));
+  for (const d of difficultyOptions(SONGS)) diff.append(option(d.id, d.label));
+
+  const status = $('f-status');
+  for (const s of STATUSES) status.append(option(s.id, s.label));
+
+  const sort = $('f-sort');
+  for (const s of SORTS) sort.append(option(s.id, s.label));
+
+  const bind = (id, key, parse = (v) => v) => {
+    const el = $(id);
+    el.value = view[key];
+    el.addEventListener(el.type === 'search' ? 'input' : 'change', () => {
+      view[key] = parse(el.value);
+      commitView();
+    });
+  };
+  bind('f-search', 'q');
+  bind('f-genre', 'genre');
+  bind('f-diff', 'difficulty');
+  bind('f-status', 'status');
+  bind('f-sort', 'sort');
+
+  const group = $('f-group');
+  group.checked = view.group;
+  group.addEventListener('change', () => {
+    view.group = group.checked;
+    commitView();
+  });
+
+  $('f-dir').addEventListener('click', () => {
+    view.dir = -view.dir;
+    commitView();
+  });
+
+  $('f-reset').addEventListener('click', () => {
+    Object.assign(view, { q: '', genre: 'all', difficulty: 'any', status: 'all' });
+    syncFilterControls();
+    commitView();
+    blip('move');
+  });
+
+  syncFilterControls();
+}
+
+function syncFilterControls() {
+  $('f-search').value = view.q;
+  $('f-genre').value = view.genre;
+  $('f-diff').value = view.difficulty;
+  $('f-status').value = view.status;
+  $('f-sort').value = view.sort;
+  $('f-group').checked = view.group;
+  $('f-dir').textContent = view.dir > 0 ? '↑' : '↓';
+  $('f-dir').title = view.dir > 0 ? 'Ascending' : 'Descending';
+}
+
+function commitView() {
+  save('view.v1', view);
+  syncFilterControls();
+  // Filtering the current song out of the list would leave the detail panel
+  // showing something you can no longer see, so follow the list.
+  renderSongList();
+  if (visible.length && !visible.some((s) => s.id === currentId)) {
+    currentId = visible[0].id;
+    renderSongList();
+  }
+  // A difficulty filter is also a statement of intent: show that tier.
+  if (view.difficulty !== 'any') {
+    const i = difficultiesOf(currentEntry()).findIndex((d) => d.id === view.difficulty);
+    if (i >= 0) diffIndex = i;
+  }
+  renderDetail();
 }
 
 // --------------------------------------------------------------- settings --
@@ -446,8 +573,8 @@ window.addEventListener('keydown', (ev) => {
   if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
 
   switch (ev.code) {
-    case 'ArrowDown': ev.preventDefault(); selectSong(songIndex + 1); break;
-    case 'ArrowUp': ev.preventDefault(); selectSong(songIndex - 1); break;
+    case 'ArrowDown': ev.preventDefault(); stepSong(1); break;
+    case 'ArrowUp': ev.preventDefault(); stepSong(-1); break;
     case 'ArrowRight': ev.preventDefault(); stepDiff(1); break;
     case 'ArrowLeft': ev.preventDefault(); stepDiff(-1); break;
     case 'Enter':
@@ -496,7 +623,10 @@ function showResults(res) {
 
   const key = bestKey(res.songId, res.difficulty);
   if (!res.autoplay && (!best[key] || res.score > best[key].score)) {
-    best[key] = { score: res.score, accuracy: res.accuracy, grade: res.grade };
+    best[key] = {
+      score: res.score, accuracy: res.accuracy, grade: res.grade,
+      fc: res.fullCombo, ap: res.allPerfect,
+    };
     save('best.v1', best);
     if (!banner.textContent) banner.textContent = 'New best score';
   }
@@ -520,6 +650,7 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 
+initFilters();
 renderSongList();
 renderDetail();
 renderLegend();
