@@ -1,7 +1,13 @@
-// Gameplay: judgement, scoring and the frame loop.
+// Gameplay: judgement, scoring and hold logic.
+//
+// A note is either PLAIN — struck with its lane key — or coloured, which is
+// struck with that colour's key on the row below. Both kinds fall in a lane, so
+// reading the chart is unchanged; the colour tells the finger which row to use.
 
 import { Particles } from './particles.js';
-import { LANE_COUNT } from './input.js';
+import { CHANNELS, colorChannel } from './input.js';
+import { LANE_COUNT, PLAIN } from './theme.js';
+import { travelTime } from './settings.js';
 
 // Judgement windows in seconds, measured from the note's exact time.
 export const WINDOWS = { PERFECT: 0.045, GREAT: 0.09, GOOD: 0.135 };
@@ -18,6 +24,9 @@ const GRADES = [
   [86, 'B'], [78, 'C'], [0, 'D'],
 ];
 
+/** The channel a note must be struck with, given the colour setting. */
+const channelFor = (note) => (note.play === PLAIN ? note.lane : colorChannel(note.play));
+
 export class Game {
   constructor({ song, audio, renderer, input, settings, onFinish }) {
     this.song = song;
@@ -29,12 +38,18 @@ export class Game {
 
     this.particles = new Particles();
     this.laneHeld = new Array(LANE_COUNT).fill(false);
+    this.channelHeld = new Array(CHANNELS).fill(false);
 
     this.reset();
   }
 
   reset() {
+    // `play` is the colour actually in force: turning colour notes off in
+    // settings flattens the whole chart to plain lane notes.
+    const colored = this.settings.colorNotes;
     for (const n of this.song.notes) {
+      n.play = colored ? n.color : PLAIN;
+      n.channel = channelFor(n);
       n.headJudged = false;
       n.tailJudged = false;
       n.holdActive = false;
@@ -42,6 +57,7 @@ export class Game {
       n.gone = false;
       n.holdEnd = n.t + n.dur;
       n.nextSpark = 0;
+      n.heldBy = -1;
     }
 
     this.units = this.song.units;
@@ -67,10 +83,11 @@ export class Game {
 
     this.particles.clear();
     this.laneHeld.fill(false);
+    this.channelHeld.fill(false);
   }
 
   get travelTime() {
-    return 1.6 / this.settings.speed;
+    return travelTime();
   }
 
   get accuracy() {
@@ -83,7 +100,7 @@ export class Game {
     this.reset();
     this.input.enabled = true;
     this.input.drain();
-    await this.audio.start(this.song, 1.2);
+    await this.audio.start(this.song, 1.4);
     this.started = true;
   }
 
@@ -116,7 +133,7 @@ export class Game {
     return 'MISS';
   }
 
-  _register(label, delta, lane, showFx = true) {
+  _register(label, delta, showFx = true) {
     if (label === 'MISS') {
       this.combo = 0;
       this.counts.MISS++;
@@ -136,35 +153,41 @@ export class Game {
     if (showFx) this.renderer.showJudge(label, delta, this.time);
   }
 
-  _receptorY() {
-    return this.renderer.pf.receptorY;
-  }
-
   _laneX(lane) {
     const pf = this.renderer.pf;
     return pf.left + lane * pf.laneW + pf.laneW / 2;
   }
 
-  _hitEffects(lane, label) {
-    const x = this._laneX(lane);
-    const y = this._receptorY();
+  _hitEffects(note, label) {
+    const x = this._laneX(note.lane);
+    const y = this.renderer.pf.receptorY;
     const strength = label === 'PERFECT' ? 1 : label === 'GREAT' ? 0.72 : 0.45;
-    this.particles.burst(x, y, lane, strength, this.settings.effects);
-    this.particles.ring(x, y, lane, this.renderer.pf.laneW * 0.95, strength);
-    this.particles.bloom(x, y, lane, this.renderer.pf.laneW * 0.8);
-    this.renderer.hitLane(lane, strength);
-    if (!this.autoplay) this.audio.hitSound(lane);
+    const tint = note.play;
+    this.particles.burst(x, y, tint, strength, this.settings.effects);
+    this.particles.ring(x, y, tint, this.renderer.pf.laneW * 0.95, strength);
+    this.particles.bloom(x, y, tint, this.renderer.pf.laneW * 0.8);
+    this.renderer.hitLane(note.lane, strength, tint);
+    if (!this.autoplay) this.audio.hitSound(note.lane);
   }
 
-  /** Find the best candidate note in `lane` for a press at `hitTime`. */
-  _findCandidate(lane, hitTime) {
+  /**
+   * Best candidate for a press. A lane key only takes plain notes in its own
+   * lane and a colour key only takes notes of that colour, which is what makes
+   * the two rows independent. Touch presses are wildcards — see `input.js`.
+   */
+  _findCandidate(ev, hitTime) {
     const notes = this.song.notes;
     let best = null;
     let bestDelta = Infinity;
     for (let i = this.checkFrom; i < notes.length; i++) {
       const n = notes[i];
       if (n.t > hitTime + WINDOWS.GOOD) break;
-      if (n.lane !== lane || n.headJudged || n.gone) continue;
+      if (n.headJudged || n.gone) continue;
+      if (ev.wildcard) {
+        if (n.lane !== ev.channel) continue;
+      } else if (n.channel !== ev.channel) {
+        continue;
+      }
       const d = Math.abs(hitTime - n.t);
       if (d <= WINDOWS.GOOD && d < bestDelta) {
         bestDelta = d;
@@ -174,8 +197,8 @@ export class Game {
     return best;
   }
 
-  _press(lane, hitTime) {
-    const note = this._findCandidate(lane, hitTime);
+  _press(ev, hitTime) {
+    const note = this._findCandidate(ev, hitTime);
     if (!note) return;
 
     const delta = hitTime - note.t;
@@ -184,21 +207,22 @@ export class Game {
 
     if (note.isHold) {
       note.holdActive = true;
+      note.heldBy = ev.channel;
       note.nextSpark = this.time;
     } else {
       note.gone = true;
     }
 
-    this._register(label, delta, lane);
-    this._hitEffects(lane, label);
+    this._register(label, delta);
+    this._hitEffects(note, label);
   }
 
-  _release(lane) {
+  _release(channel) {
     const notes = this.song.notes;
     for (let i = this.checkFrom; i < notes.length; i++) {
       const n = notes[i];
       if (n.t > this.time) break;
-      if (!n.holdActive || n.lane !== lane) continue;
+      if (!n.holdActive || n.heldBy !== channel) continue;
       if (this.time >= n.holdEnd - HOLD_LENIENCY) {
         this._completeHold(n);
       } else {
@@ -206,8 +230,8 @@ export class Game {
         n.holdBroken = true;
         n.tailJudged = true;
         n.gone = true;
-        this._register('MISS', 0, lane);
-        this.particles.missDust(this._laneX(lane), this._receptorY());
+        this._register('MISS', 0);
+        this.particles.missDust(this._laneX(n.lane), this.renderer.pf.receptorY);
       }
       return;
     }
@@ -217,8 +241,8 @@ export class Game {
     n.holdActive = false;
     n.tailJudged = true;
     n.gone = true;
-    this._register('PERFECT', 0, n.lane);
-    this._hitEffects(n.lane, 'PERFECT');
+    this._register('PERFECT', 0);
+    this._hitEffects(n, 'PERFECT');
   }
 
   // ----------------------------------------------------------------- loop --
@@ -235,7 +259,7 @@ export class Game {
     // restarts exactly where it stopped rather than running behind the overlay.
     if (this.countdown > 0) {
       this.countdown -= dt;
-      // Input is swallowed until the countdown clears so a key held from
+      // Input is swallowed until the countdown clears, so a key held from
       // before the pause cannot fire a stray judgement.
       this.input.drain();
       this.particles.update(dt);
@@ -255,10 +279,7 @@ export class Game {
     this._updateHolds(dt);
     this._sweepMisses();
     this._advanceWindow();
-
-    for (let i = 0; i < LANE_COUNT; i++) {
-      this.laneHeld[i] = this.autoplay ? this._autoLane(i) : this.input.held[i];
-    }
+    this._readHeld();
 
     this.particles.update(dt);
 
@@ -269,8 +290,18 @@ export class Game {
     for (const ev of this.input.drain()) {
       // `age` rewinds to the instant the key physically went down.
       const at = this.time - ev.age;
-      if (ev.down) this._press(ev.lane, at);
-      else this._release(ev.lane);
+      if (ev.down) this._press(ev, at);
+      else this._release(ev.channel);
+    }
+  }
+
+  _readHeld() {
+    for (let i = 0; i < CHANNELS; i++) {
+      this.channelHeld[i] = this.autoplay ? this._autoChannel(i) : this.input.held[i];
+    }
+    // A lane lights up for either of the two keys that target it.
+    for (let i = 0; i < LANE_COUNT; i++) {
+      this.laneHeld[i] = this.channelHeld[i] || this.channelHeld[LANE_COUNT + i];
     }
   }
 
@@ -283,21 +314,22 @@ export class Game {
       n.headJudged = true;
       if (n.isHold) {
         n.holdActive = true;
+        n.heldBy = n.channel;
         n.nextSpark = this.time;
       } else {
         n.gone = true;
       }
-      this._register('PERFECT', 0, n.lane);
-      this._hitEffects(n.lane, 'PERFECT');
+      this._register('PERFECT', 0);
+      this._hitEffects(n, 'PERFECT');
     }
   }
 
-  _autoLane(lane) {
+  _autoChannel(channel) {
     const notes = this.song.notes;
     for (let i = this.checkFrom; i < notes.length; i++) {
       const n = notes[i];
       if (n.t > this.time) break;
-      if (n.holdActive && n.lane === lane) return true;
+      if (n.holdActive && n.heldBy === channel) return true;
     }
     return false;
   }
@@ -309,16 +341,16 @@ export class Game {
       if (n.t > this.time + 0.1) break;
       if (!n.holdActive) continue;
 
-      const stillHeld = this.autoplay || this.input.held[n.lane];
       if (this.time >= n.holdEnd) {
         this._completeHold(n);
         continue;
       }
-      if (!stillHeld) continue; // release is handled by the input event
+      const stillHeld = this.autoplay || this.input.held[n.heldBy];
+      if (!stillHeld) continue; // the release event does the judging
 
       if (this.time >= n.nextSpark) {
         n.nextSpark = this.time + 0.03;
-        this.particles.holdSpark(this._laneX(n.lane), this._receptorY(), n.lane);
+        this.particles.holdSpark(this._laneX(n.lane), this.renderer.pf.receptorY, n.play);
       }
     }
   }
@@ -333,13 +365,13 @@ export class Game {
       n.headJudged = true;
       n.gone = true;
       n.holdBroken = n.isHold;
-      this._register('MISS', 0, n.lane);
+      this._register('MISS', 0);
       // A hold that is never started loses its tail as well.
       if (n.isHold) {
         n.tailJudged = true;
-        this._register('MISS', 0, n.lane, false);
+        this._register('MISS', 0, false);
       }
-      this.particles.missDust(this._laneX(n.lane), this._receptorY());
+      this.particles.missDust(this._laneX(n.lane), this.renderer.pf.receptorY);
     }
   }
 
@@ -362,6 +394,8 @@ export class Game {
     const grade = GRADES.find(([min]) => acc >= min)[1];
     const fullCombo = this.counts.MISS === 0;
     this.onFinish({
+      songId: this.song.id,
+      difficulty: this.song.difficulty,
       score: Math.round(this.score),
       accuracy: acc,
       maxCombo: this.maxCombo,
@@ -373,11 +407,4 @@ export class Game {
       autoplay: this.autoplay,
     });
   }
-
 }
-
-export const gradeColor = (grade) =>
-  ({
-    SSS: '#ffe27a', SS: '#ffd166', S: '#7ce7ff',
-    A: '#8eeba0', B: '#a8b6ff', C: '#c9a7ff', D: '#ff8fa3',
-  }[grade] || '#ffffff');

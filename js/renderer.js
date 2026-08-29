@@ -3,49 +3,43 @@
 // Two rules keep this smooth:
 //   1. Every position is a pure function of the audio clock, so motion is
 //      correct at any refresh rate without interpolation hacks.
-//   2. Everything that reacts (lane glow, score counter, combo pop) is
+//   2. Everything that reacts — lane glow, score counter, combo pop — is
 //      exponentially damped with `damp`, which is framerate independent.
-// Glow-heavy note graphics are pre-rendered to sprites once per resize instead
-// of paying for `shadowBlur` on every note, every frame.
+// Glow-heavy note graphics are pre-rendered to sprites once per resize rather
+// than paying for `shadowBlur` on every note, every frame.
 
 import {
   clamp, lerp, damp, easeOutCubic, easeOutQuint, easeOutBack, easeOutExpo,
-  mulberry32, roundRect, fmtScore, fmtTime,
+  mulberry32, roundRect, fmtScore, fmtTime, hexToRgb, rgba, shade,
 } from './util.js';
-import { intensityAt } from './song.js';
-
-export const LANE_COLORS = [
-  [56, 232, 255],
-  [124, 160, 255],
-  [186, 134, 255],
-  [255, 118, 214],
-];
-
-export const JUDGE_COLORS = {
-  PERFECT: [255, 226, 122],
-  GREAT: [124, 231, 255],
-  GOOD: [142, 235, 160],
-  MISS: [255, 107, 129],
-};
-
-const NOTE_H = 26;
-const HOLD_CAP = 20;
-const SPRITE_PAD = 22;
-const KEY_LABELS = ['D', 'F', 'J', 'K'];
+import {
+  LANE_COUNT, NOTE_COLORS, PLAIN, JUDGE_HEX, noteRgbTable, keyTable, keyLabel,
+  difficultyMeta,
+} from './theme.js';
 
 const FONT = `system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif`;
+const JUDGE_RGB = Object.fromEntries(
+  Object.entries(JUDGE_HEX).map(([k, v]) => [k, hexToRgb(v)])
+);
+
+/** Dark playfield colours — the menus are light, the game is not. */
+const BG_TOP = [12, 17, 34];
+const BG_BOTTOM = [6, 9, 20];
 
 export class Renderer {
-  constructor(canvas) {
+  constructor(canvas, settings) {
     this.canvas = canvas;
+    this.settings = settings;
     this.ctx = canvas.getContext('2d', { alpha: false });
     this.dpr = 1;
     this.w = 0;
     this.h = 0;
 
     // Damped visual state, owned entirely by the renderer.
-    this.laneGlow = [0, 0, 0, 0];
-    this.laneHit = [0, 0, 0, 0];
+    this.laneGlow = new Array(LANE_COUNT).fill(0);
+    this.laneHit = new Array(LANE_COUNT).fill(0);
+    this.laneTint = new Array(LANE_COUNT).fill(PLAIN);
+    this.colorGlow = new Array(NOTE_COLORS.length).fill(0);
     this.displayScore = 0;
     this.displayAcc = 100;
     this.comboScale = 1;
@@ -54,19 +48,33 @@ export class Renderer {
     this.energy = 0;
     this.flash = 0;
     this.lastSection = null;
+    /** 0 in the menus, 1 in a song; cross-fades the whole scene. */
+    this.dark = 0;
 
-    this.judgeFx = { label: '', color: JUDGE_COLORS.PERFECT, time: -10, delta: 0, show: false };
+    this.judgeFx = { label: '', rgb: JUDGE_RGB.PERFECT, time: -10, delta: 0, show: false };
+
+    this.accent = hexToRgb('#37d6ff');
+    this.accentTarget = this.accent.slice();
 
     const rnd = mulberry32(20260808);
-    this.stars = Array.from({ length: 140 }, () => ({
-      x: rnd(), y: rnd(),
-      z: 0.25 + rnd() * 1,
-      s: 0.5 + rnd() * 1.7,
-      tw: rnd() * Math.PI * 2,
+    this.motes = Array.from({ length: 54 }, () => ({
+      x: rnd(), y: rnd(), z: 0.3 + rnd(), s: 1 + rnd() * 2.6, tw: rnd() * Math.PI * 2,
     }));
 
-    this.noteSprites = [];
+    this.refreshColors();
     this.resize();
+  }
+
+  /** Re-read note colours and key bindings after the settings change. */
+  refreshColors() {
+    this.noteRgb = noteRgbTable(this.settings);
+    this.keys = keyTable(this.settings).map(keyLabel);
+    if (this.w) this._buildSprites();
+  }
+
+  /** Tint the menu background with the highlighted song's colour. */
+  setMood(hex) {
+    this.accentTarget = hexToRgb(hex);
   }
 
   resize() {
@@ -82,19 +90,23 @@ export class Renderer {
     this.canvas.style.height = h + 'px';
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    const pfW = clamp(Math.min(w * 0.88, h * 0.62), 280, 620);
+    const pfW = clamp(Math.min(w * 0.9, h * 0.64), 260, 580);
+    // Two rows of key caps live below the judge line, so it sits higher than a
+    // four-key game would normally put it.
+    const foot = clamp(h * 0.17, 108, 186);
     this.pf = {
       width: pfW,
       left: (w - pfW) / 2,
-      laneW: pfW / 4,
-      receptorY: h - clamp(h * 0.155, 92, 180),
-      spawnY: -70,
+      laneW: pfW / LANE_COUNT,
+      receptorY: h - foot,
+      spawnY: -60,
     };
     this.pf.travel = this.pf.receptorY - this.pf.spawnY;
-    this.noteW = this.pf.laneW * 0.84;
-    // Compact HUD on narrow screens so the score can never clip.
-    this.ui = w < 560 ? 0.78 : w < 760 ? 0.9 : 1;
-    this.hudPad = clamp(w * 0.022, 14, 26);
+
+    this.noteW = this.pf.laneW * 0.82;
+    this.noteH = clamp(this.pf.laneW * 0.19, 16, 26);
+    this.ui = w < 560 ? 0.8 : w < 780 ? 0.9 : 1;
+    this.hudPad = clamp(w * 0.024, 14, 30);
 
     this._buildSprites();
   }
@@ -104,83 +116,97 @@ export class Renderer {
     return { left: this.pf.left, width: this.pf.width, laneW: this.pf.laneW };
   }
 
+  // ------------------------------------------------------------- sprites ---
+
   _buildSprites() {
-    this.noteSprites = LANE_COLORS.map((c) => this._noteSprite(c));
-    this.padSprites = LANE_COLORS.map((c) => this._padSprite(c));
+    this.noteSprites = this.noteRgb.map((c, i) => this._noteSprite(c, i !== PLAIN));
+    this.padSprite = this._padSprite();
   }
 
-  _noteSprite(col) {
+  /**
+   * A note is a wide rounded bar with a bright core and a white rim. Coloured
+   * notes carry a chevron pointing at the row below, so they stay legible
+   * without relying on hue alone.
+   */
+  _noteSprite(col, isColored) {
     const w = this.noteW;
-    const h = NOTE_H;
-    const pad = SPRITE_PAD;
+    const h = this.noteH;
+    const pad = 18;
     const c = document.createElement('canvas');
     c.width = Math.ceil((w + pad * 2) * this.dpr);
     c.height = Math.ceil((h + pad * 2) * this.dpr);
     const g = c.getContext('2d');
     g.scale(this.dpr, this.dpr);
+    const r = h * 0.42;
 
-    const rgb = `${col[0]},${col[1]},${col[2]}`;
-
-    // Outer halo, baked once so the game loop never touches shadowBlur.
-    g.shadowColor = `rgba(${rgb},0.95)`;
-    g.shadowBlur = 18;
-    g.fillStyle = `rgba(${rgb},0.9)`;
-    roundRect(g, pad, pad, w, h, h / 2);
-    g.fill();
+    // Halo, baked once so the frame loop never touches shadowBlur.
+    g.shadowColor = rgba(col, 0.85);
+    g.shadowBlur = 14;
+    g.fillStyle = rgba(col, 0.9);
+    roundRect(g, pad, pad, w, h, r);
     g.fill();
     g.shadowBlur = 0;
 
-    // Body: bright top edge falling into saturated colour.
     const grad = g.createLinearGradient(0, pad, 0, pad + h);
-    grad.addColorStop(0, `rgba(255,255,255,0.98)`);
-    grad.addColorStop(0.22, `rgba(${rgb},1)`);
-    grad.addColorStop(0.72, `rgba(${Math.round(col[0] * 0.62)},${Math.round(col[1] * 0.62)},${Math.round(col[2] * 0.72)},1)`);
-    grad.addColorStop(1, `rgba(${rgb},0.95)`);
+    grad.addColorStop(0, rgba(shade(col, 1.4), 1));
+    grad.addColorStop(0.4, rgba(col, 1));
+    grad.addColorStop(1, rgba(shade(col, 0.52), 1));
     g.fillStyle = grad;
-    roundRect(g, pad, pad, w, h, h / 2);
+    roundRect(g, pad, pad, w, h, r);
     g.fill();
 
-    // Specular sliver along the top.
-    g.fillStyle = 'rgba(255,255,255,0.55)';
-    roundRect(g, pad + w * 0.12, pad + 3, w * 0.76, 3.5, 2);
+    // White rim: the single most important readability cue on a dark field.
+    g.strokeStyle = 'rgba(255,255,255,0.9)';
+    g.lineWidth = isColored ? 2.4 : 1.8;
+    roundRect(g, pad + 0.9, pad + 0.9, w - 1.8, h - 1.8, r);
+    g.stroke();
+
+    // Specular sheen along the top edge — enough to read as glass, not so much
+    // that it washes the colour out.
+    const sheen = g.createLinearGradient(0, pad + h * 0.16, 0, pad + h * 0.5);
+    sheen.addColorStop(0, 'rgba(255,255,255,0.6)');
+    sheen.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = sheen;
+    roundRect(g, pad + w * 0.07, pad + h * 0.16, w * 0.86, h * 0.34, h * 0.16);
     g.fill();
 
-    return { canvas: c, w: w + pad * 2, h: h + pad * 2, pad };
+    if (isColored) {
+      const cx = pad + w / 2;
+      const cy = pad + h / 2;
+      const k = h * 0.24;
+      g.strokeStyle = 'rgba(255,255,255,0.95)';
+      g.lineWidth = 2.2;
+      g.lineCap = 'round';
+      g.lineJoin = 'round';
+      g.beginPath();
+      g.moveTo(cx - k, cy - k * 0.55);
+      g.lineTo(cx, cy + k * 0.5);
+      g.lineTo(cx + k, cy - k * 0.55);
+      g.stroke();
+    }
+
+    return { canvas: c, w: w + pad * 2, h: h + pad * 2 };
   }
 
-  _padSprite(col) {
+  _padSprite() {
     const w = this.pf.laneW * 0.86;
-    const h = 20;
-    const pad = 16;
-    const rgb = `${col[0]},${col[1]},${col[2]}`;
+    const h = 12;
+    const pad = 14;
     const c = document.createElement('canvas');
     c.width = Math.ceil((w + pad * 2) * this.dpr);
     c.height = Math.ceil((h + pad * 2) * this.dpr);
     const g = c.getContext('2d');
     g.scale(this.dpr, this.dpr);
 
-    // Recessed well: dark inside, lit rim. Reads as a physical target the
-    // note drops into rather than a floating outline.
-    const fill = g.createLinearGradient(0, pad, 0, pad + h);
-    fill.addColorStop(0, `rgba(${rgb},0.03)`);
-    fill.addColorStop(1, `rgba(${rgb},0.2)`);
-    g.fillStyle = fill;
+    g.fillStyle = 'rgba(255,255,255,0.07)';
     roundRect(g, pad, pad, w, h, h / 2);
     g.fill();
-
-    g.strokeStyle = `rgba(${rgb},0.6)`;
-    g.lineWidth = 1.6;
-    roundRect(g, pad, pad, w, h, h / 2);
-    g.stroke();
-
-    g.strokeStyle = 'rgba(255,255,255,0.3)';
+    g.strokeStyle = 'rgba(255,255,255,0.24)';
     g.lineWidth = 1.2;
-    g.beginPath();
-    g.moveTo(pad + h * 0.6, pad + 0.6);
-    g.lineTo(pad + w - h * 0.6, pad + 0.6);
+    roundRect(g, pad + 0.6, pad + 0.6, w - 1.2, h - 1.2, h / 2);
     g.stroke();
 
-    return { canvas: c, w: w + pad * 2, h: h + pad * 2, pad };
+    return { canvas: c, w: w + pad * 2, h: h + pad * 2 };
   }
 
   /** Vertical position of a note at song time `t`. */
@@ -194,29 +220,32 @@ export class Renderer {
   showJudge(label, delta, time) {
     this.judgeFx = {
       label,
-      color: JUDGE_COLORS[label] || JUDGE_COLORS.GOOD,
+      rgb: JUDGE_RGB[label] || JUDGE_RGB.GOOD,
       time,
       delta,
       show: true,
     };
   }
 
-  hitLane(lane, strength = 1) {
+  hitLane(lane, strength = 1, tint = PLAIN) {
     this.laneHit[lane] = Math.max(this.laneHit[lane], strength);
+    this.laneTint[lane] = tint;
   }
 
-  // -------------------------------------------------------------- frame ----
+  // --------------------------------------------------------------- frame ---
 
   draw(g, dt) {
     const ctx = this.ctx;
-    const { w, h } = this;
     const t = g.time;
 
-    // --- damped reactive state -------------------------------------------
-    for (let i = 0; i < 4; i++) {
-      const target = g.laneHeld[i] ? 1 : 0;
-      this.laneGlow[i] = damp(this.laneGlow[i], target, 22, dt);
+    this.dark = damp(this.dark, 1, 6, dt);
+
+    for (let i = 0; i < LANE_COUNT; i++) {
+      this.laneGlow[i] = damp(this.laneGlow[i], g.laneHeld[i] ? 1 : 0, 22, dt);
       this.laneHit[i] = damp(this.laneHit[i], 0, 7, dt);
+    }
+    for (let i = 0; i < NOTE_COLORS.length; i++) {
+      this.colorGlow[i] = damp(this.colorGlow[i], g.channelHeld[LANE_COUNT + i] ? 1 : 0, 22, dt);
     }
     this.displayScore = damp(this.displayScore, g.score, 9, dt);
     this.displayAcc = damp(this.displayAcc, g.accuracy, 8, dt);
@@ -224,168 +253,180 @@ export class Renderer {
     this.flash = damp(this.flash, 0, 4, dt);
 
     if (g.combo !== this.comboShown) {
-      if (g.combo > this.comboShown) this.comboScale = 1.28;
+      if (g.combo > this.comboShown) this.comboScale = 1.22;
       this.comboShown = g.combo;
     }
     this.comboScale = damp(this.comboScale, 1, 14, dt);
 
-    const intensity = g.started ? intensityAt(g.song, t) : 0.25;
-    const beatPos = t / g.song.spb;
-    const beatFrac = beatPos - Math.floor(beatPos);
-    this.beatPulse = g.started && t > 0 ? Math.pow(1 - beatFrac, 3) : 0;
-
-    const section = g.started ? g.song.sections.find((s) => t >= s.start && t < s.end) : null;
+    const section = g.song.sections.find((s) => t >= s.start && t < s.end);
+    const intensity = section ? section.intensity : 0.25;
     if (section && section !== this.lastSection) {
-      if (this.lastSection && section.intensity > this.lastSection.intensity + 0.25) {
-        this.flash = 0.5;
-      }
+      if (this.lastSection && section.intensity > this.lastSection.intensity + 0.25) this.flash = 0.45;
       this.lastSection = section;
     }
 
-    this._drawBackground(ctx, t, intensity, dt);
-    this._drawPlayfield(ctx, g, t, intensity);
-    this._drawBeatLines(ctx, g, t);
-    // The combo sits behind the notes so an incoming note is never obscured
-    // by a five-digit number.
+    const beat = t / g.song.spb;
+    this.beatPulse = t > 0 ? Math.pow(1 - (beat - Math.floor(beat)), 3) : 0;
+
+    this._drawScene(ctx, t, intensity, dt);
+    this._drawPlayfield(ctx, intensity);
+    this._drawBarLines(ctx, g, t);
+    // The combo sits behind the notes so an incoming note is never obscured.
     this._drawCombo(ctx, g);
+    this._drawHolds(ctx, g, t);
     this._drawNotes(ctx, g, t);
-    this._drawReceptors(ctx, g);
-    g.particles.draw(ctx, LANE_COLORS);
-    this._drawJudgement(ctx, g, t);
+    this._drawReceptors(ctx);
+    g.particles.draw(ctx, this.noteRgb);
+    this._drawKeyCaps(ctx);
+    this._drawJudgement(ctx, t);
     this._drawHud(ctx, g, t);
 
     if (this.flash > 0.002) {
-      ctx.fillStyle = `rgba(255,255,255,${this.flash * 0.16})`;
-      ctx.fillRect(0, 0, w, h);
+      ctx.fillStyle = `rgba(255,255,255,${this.flash * 0.14})`;
+      ctx.fillRect(0, 0, this.w, this.h);
     }
   }
 
   /**
-   * Attract-mode background shown behind the menus. Deliberately just the
-   * ambient layer — drawing the playfield here would put hard edges right
-   * behind the title panel.
+   * Menu backdrop: a light pastel wash tinted by the highlighted song. The
+   * menus themselves are DOM, so this only has to be calm and never fight the
+   * cards sitting on top of it.
    */
   drawIdle(t, dt) {
-    this.energy = damp(this.energy, 0.3 + 0.2 * Math.sin(t * 0.9), 3, dt);
-    this._drawBackground(this.ctx, t * 0.5, 0.5, dt);
-  }
-
-  _drawBackground(ctx, t, intensity, dt) {
+    const ctx = this.ctx;
     const { w, h } = this;
+    this.dark = damp(this.dark, 0, 6, dt);
+    for (let i = 0; i < 3; i++) {
+      this.accent[i] = damp(this.accent[i], this.accentTarget[i], 4, dt);
+    }
+    this.energy = damp(this.energy, 0.35 + 0.15 * Math.sin(t * 0.8), 2, dt);
 
     const base = ctx.createLinearGradient(0, 0, 0, h);
-    base.addColorStop(0, '#080a18');
-    base.addColorStop(0.55, '#0b0d20');
-    base.addColorStop(1, '#05060f');
+    base.addColorStop(0, '#f7fbff');
+    base.addColorStop(0.55, '#eef4fb');
+    base.addColorStop(1, '#e6eef8');
     ctx.fillStyle = base;
     ctx.fillRect(0, 0, w, h);
 
-    // Slow aurora blobs. Motion is driven by the song clock so the background
-    // breathes with the music rather than with wall time.
     ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
-    const pulse = 0.55 + 0.45 * this.energy;
-    for (let i = 0; i < 4; i++) {
-      const col = LANE_COLORS[i];
-      const ph = t * 0.11 + i * 1.7;
-      const x = w * (0.5 + Math.cos(ph * 0.7 + i) * 0.38);
-      const y = h * (0.36 + Math.sin(ph * 0.53 + i * 1.7) * 0.26);
-      const r = Math.max(w, h) * (0.34 + 0.07 * Math.sin(ph));
-      const a = (0.1 + 0.16 * intensity) * pulse;
+    const blobs = [
+      [0.16, 0.2, this.accent, 0.3],
+      [0.86, 0.32, hexToRgb('#00c8b4'), 0.22],
+      [0.6, 0.92, hexToRgb('#ff6aa2'), 0.16],
+    ];
+    for (const [bx, by, col, a] of blobs) {
+      const x = w * (bx + Math.cos(t * 0.18 + bx * 9) * 0.05);
+      const y = h * (by + Math.sin(t * 0.15 + by * 7) * 0.05);
+      const r = Math.max(w, h) * 0.5;
       const grd = ctx.createRadialGradient(x, y, 0, x, y, r);
-      grd.addColorStop(0, `rgba(${col[0]},${col[1]},${col[2]},${a})`);
-      grd.addColorStop(0.55, `rgba(${col[0]},${col[1]},${col[2]},${a * 0.28})`);
-      grd.addColorStop(1, `rgba(${col[0]},${col[1]},${col[2]},0)`);
+      grd.addColorStop(0, rgba(col, a));
+      grd.addColorStop(1, rgba(col, 0));
       ctx.fillStyle = grd;
       ctx.fillRect(0, 0, w, h);
     }
 
-    // A wide column of light behind the playfield. This is what stops the
-    // lanes from looking like they are floating on an empty page.
-    const { left, width, receptorY } = this.pf;
-    const halo = ctx.createLinearGradient(left - width * 0.35, 0, left + width * 1.35, 0);
-    halo.addColorStop(0, 'rgba(80,120,255,0)');
-    halo.addColorStop(0.5, `rgba(110,150,255,${0.06 + 0.09 * intensity * pulse})`);
-    halo.addColorStop(1, 'rgba(80,120,255,0)');
-    ctx.fillStyle = halo;
-    ctx.fillRect(left - width * 0.35, 0, width * 1.7, receptorY + 60);
-
-    // Drifting starfield with a gentle parallax.
-    for (const s of this.stars) {
-      s.y += dt * (0.006 + 0.02 * s.z) * (0.4 + intensity);
-      if (s.y > 1.02) {
-        s.y -= 1.06;
-        s.x = Math.random();
-      }
-      const tw = 0.45 + 0.55 * Math.abs(Math.sin(s.tw + t * 1.4 * s.z));
-      const a = tw * (0.18 + 0.34 * s.z);
-      ctx.fillStyle = `rgba(200,225,255,${a})`;
+    // Sparkles, the one bit of motion the menu needs.
+    for (const m of this.motes) {
+      m.y -= dt * 0.018 * m.z;
+      if (m.y < -0.03) { m.y = 1.03; m.x = Math.random(); }
+      const tw = 0.4 + 0.6 * Math.abs(Math.sin(m.tw + t * 1.1 * m.z));
+      ctx.fillStyle = rgba(this.accent, tw * 0.3 * m.z);
       ctx.beginPath();
-      ctx.arc(s.x * w, s.y * h, s.s * (0.7 + 0.3 * this.energy), 0, Math.PI * 2);
+      ctx.arc(m.x * w, m.y * h, m.s * 0.9, 0, Math.PI * 2);
       ctx.fill();
     }
     ctx.restore();
-
-    // Vignette keeps attention on the playfield.
-    const vg = ctx.createRadialGradient(w / 2, this.pf.receptorY * 0.75, h * 0.18, w / 2, h * 0.5, Math.max(w, h) * 0.78);
-    vg.addColorStop(0, 'rgba(0,0,0,0)');
-    vg.addColorStop(1, 'rgba(0,0,0,0.62)');
-    ctx.fillStyle = vg;
-    ctx.fillRect(0, 0, w, h);
   }
 
-  _drawPlayfield(ctx, g, t, intensity) {
-    const { left, width, laneW, receptorY } = this.pf;
-    const { h } = this;
+  _drawScene(ctx, t, intensity, dt) {
+    const { w, h } = this;
+    const k = this.dark;
 
-    // Breathing: a sub-1% scale pulse on the beat. Barely visible on its own,
-    // but it is what makes the field feel alive rather than static.
-    const breathe = 1 + this.beatPulse * 0.006 * intensity;
+    // Cross-fade from the menu wash to the dark stage, so entering a song is a
+    // dip rather than a cut.
+    const top = BG_TOP.map((v, i) => lerp([247, 251, 255][i], v, k));
+    const bot = BG_BOTTOM.map((v, i) => lerp([230, 238, 248][i], v, k));
+    const base = ctx.createLinearGradient(0, 0, 0, h);
+    base.addColorStop(0, rgba(top, 1));
+    base.addColorStop(1, rgba(bot, 1));
+    ctx.fillStyle = base;
+    ctx.fillRect(0, 0, w, h);
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const pulse = (0.5 + 0.5 * this.energy) * k;
+
+    // One broad glow behind the playfield, breathing with the low end.
+    const cx = this.pf.left + this.pf.width / 2;
+    const gy = this.pf.receptorY;
+    const r = Math.max(w, h) * (0.5 + 0.06 * intensity);
+    const grd = ctx.createRadialGradient(cx, gy, 0, cx, gy, r);
+    grd.addColorStop(0, rgba(this.accent, (0.1 + 0.16 * intensity) * pulse));
+    grd.addColorStop(0.45, rgba(this.accent, 0.05 * pulse));
+    grd.addColorStop(1, rgba(this.accent, 0));
+    ctx.fillStyle = grd;
+    ctx.fillRect(0, 0, w, h);
+
+    for (const m of this.motes) {
+      m.y -= dt * (0.01 + 0.03 * m.z) * (0.5 + intensity);
+      if (m.y < -0.03) { m.y = 1.03; m.x = Math.random(); }
+      const tw = 0.4 + 0.6 * Math.abs(Math.sin(m.tw + t * 1.3 * m.z));
+      ctx.fillStyle = rgba([190, 220, 255], tw * 0.22 * m.z * k);
+      ctx.beginPath();
+      ctx.arc(m.x * w, m.y * h, m.s * 0.85, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  _drawPlayfield(ctx, intensity) {
+    const { left, width, laneW, receptorY, travel } = this.pf;
+    const k = this.dark;
+    if (k < 0.01) return;
+
+    // A sub-1% scale pulse on the beat. Barely visible alone, but it is what
+    // makes the field feel alive rather than static.
+    const breathe = 1 + this.beatPulse * 0.005 * intensity;
     ctx.save();
     ctx.translate(left + width / 2, receptorY);
     ctx.scale(breathe, 1);
     ctx.translate(-(left + width / 2), -receptorY);
 
-    // Panel: darkened so the notes read as lit objects against it.
     const panel = ctx.createLinearGradient(0, 0, 0, receptorY);
-    panel.addColorStop(0, 'rgba(6,9,26,0.0)');
-    panel.addColorStop(0.18, 'rgba(6,9,26,0.55)');
-    panel.addColorStop(1, 'rgba(9,12,34,0.8)');
+    panel.addColorStop(0, `rgba(4,7,18,0)`);
+    panel.addColorStop(0.22, `rgba(4,7,18,${0.5 * k})`);
+    panel.addColorStop(1, `rgba(7,10,26,${0.78 * k})`);
     ctx.fillStyle = panel;
     ctx.fillRect(left, 0, width, receptorY + 4);
 
-    // Lane separators.
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
-    for (let i = 1; i < 4; i++) {
+    for (let i = 1; i < LANE_COUNT; i++) {
       const x = left + i * laneW;
       const grd = ctx.createLinearGradient(0, 0, 0, receptorY);
-      grd.addColorStop(0, 'rgba(150,180,255,0)');
-      grd.addColorStop(0.45, 'rgba(150,180,255,0.1)');
-      grd.addColorStop(1, 'rgba(160,190,255,0.3)');
+      grd.addColorStop(0, 'rgba(160,200,255,0)');
+      grd.addColorStop(1, `rgba(170,205,255,${0.22 * k})`);
       ctx.fillStyle = grd;
       ctx.fillRect(x - 0.5, 0, 1, receptorY);
     }
-
-    // Outer rails, brighter and tinted by the edge lane colours.
-    for (const [x, col] of [[left, LANE_COLORS[0]], [left + width, LANE_COLORS[3]]]) {
+    for (const x of [left, left + width]) {
       const grd = ctx.createLinearGradient(0, 0, 0, receptorY);
-      grd.addColorStop(0, `rgba(${col[0]},${col[1]},${col[2]},0)`);
-      grd.addColorStop(1, `rgba(${col[0]},${col[1]},${col[2]},${0.4 + 0.25 * intensity})`);
+      grd.addColorStop(0, rgba(this.accent, 0));
+      grd.addColorStop(1, rgba(this.accent, (0.35 + 0.2 * intensity) * k));
       ctx.fillStyle = grd;
       ctx.fillRect(x - 1, 0, 2, receptorY);
     }
 
     // Per-lane beams for held keys and recent hits.
-    for (let i = 0; i < 4; i++) {
-      const amount = Math.max(this.laneGlow[i] * 0.55, this.laneHit[i]);
+    for (let i = 0; i < LANE_COUNT; i++) {
+      const amount = Math.max(this.laneGlow[i] * 0.5, this.laneHit[i]) * k;
       if (amount < 0.01) continue;
-      const col = LANE_COLORS[i];
+      const col = this.noteRgb[this.laneHit[i] > 0.02 ? this.laneTint[i] : PLAIN];
       const x = left + i * laneW;
-      const top = receptorY - this.pf.travel * 0.55;
+      const top = receptorY - travel * 0.5;
       const grd = ctx.createLinearGradient(0, top, 0, receptorY);
-      grd.addColorStop(0, `rgba(${col[0]},${col[1]},${col[2]},0)`);
-      grd.addColorStop(1, `rgba(${col[0]},${col[1]},${col[2]},${0.3 * amount})`);
+      grd.addColorStop(0, rgba(col, 0));
+      grd.addColorStop(1, rgba(col, 0.3 * amount));
       ctx.fillStyle = grd;
       ctx.fillRect(x, top, laneW, receptorY - top);
     }
@@ -393,260 +434,249 @@ export class Renderer {
     ctx.restore();
   }
 
-  _drawBeatLines(ctx, g, t) {
-    if (!g.started) return;
+  _drawBarLines(ctx, g, t) {
     const { left, width, receptorY } = this.pf;
-    const spb = g.song.spb;
+    const barLen = g.song.spb * 4;
     const travel = g.travelTime;
-    const firstBar = Math.floor(t / (spb * 4)) ;
-    ctx.save();
-    for (let b = firstBar; b < firstBar + Math.ceil(travel / (spb * 4)) + 2; b++) {
-      const time = b * spb * 4;
-      const y = this.yFor(time, t, travel);
+    const first = Math.floor(t / barLen);
+    for (let b = first; b < first + Math.ceil(travel / barLen) + 2; b++) {
+      const y = this.yFor(b * barLen, t, travel);
       if (y < -10 || y > receptorY + 2) continue;
-      const fade = clamp(y / (receptorY * 0.4), 0, 1);
-      ctx.fillStyle = `rgba(160,190,255,${0.12 * fade})`;
+      ctx.fillStyle = `rgba(170,205,255,${0.1 * clamp(y / (receptorY * 0.4), 0, 1) * this.dark})`;
       ctx.fillRect(left, y, width, 1);
     }
-    ctx.restore();
   }
 
-  _drawNotes(ctx, g, t) {
+  _drawHolds(ctx, g, t) {
     const { left, laneW, receptorY } = this.pf;
     const travel = g.travelTime;
     const notes = g.song.notes;
+    const bw = this.noteW * 0.56;
 
-    // Notes are sorted by time, so `y` decreases as the index grows: once a
-    // note is above the spawn line every later note is too, and we can stop.
-    ctx.save();
     for (let i = g.renderFrom; i < notes.length; i++) {
       const n = notes[i];
       const yHead = this.yFor(n.t, t, travel);
-      if (yHead < -260) break;
+      if (yHead < -240) break;
       if (!n.isHold || n.gone) continue;
-      const yTail = this.yFor(n.t + n.dur, t, travel);
+      const yTail = this.yFor(n.holdEnd, t, travel);
       if (yTail > receptorY + 40) continue;
-      this._drawHoldBody(ctx, g, n, yHead, yTail, t);
-    }
-    ctx.restore();
 
-    for (let i = g.renderFrom; i < notes.length; i++) {
-      const n = notes[i];
-      const y = this.yFor(n.t, t, travel);
-      if (y < -160) break;
-      if (n.gone || n.headJudged) continue;
-      if (y > this.h + 100) continue;
-
-      const sprite = this.noteSprites[n.lane];
       const cx = left + n.lane * laneW + laneW / 2;
+      // Once the head is struck the body pins to the judge line and visibly
+      // drains, which reads instantly as "keep holding".
+      const top = n.holdActive ? Math.min(yTail, receptorY) : yTail;
+      const bottom = n.holdActive ? receptorY : Math.min(yHead, receptorY + 200);
+      if (bottom - top < 1) continue;
 
-      // Fade and scale in near the spawn line to fake depth.
-      const p = clamp((n.t - t) / travel, 0, 1);
-      const appear = clamp((1 - p) / 0.14, 0, 1);
-      const scale = lerp(0.86, 1, easeOutCubic(appear));
-      const alpha = easeOutCubic(appear);
+      const col = n.holdBroken ? [110, 118, 140] : this.noteRgb[n.play];
+      const a = n.holdBroken ? 0.2 : n.holdActive ? 0.8 : 0.5;
 
-      ctx.globalAlpha = alpha;
-      const dw = sprite.w * scale;
-      const dh = sprite.h * scale;
-      ctx.drawImage(sprite.canvas, cx - dw / 2, y - dh / 2, dw, dh);
-      ctx.globalAlpha = 1;
-    }
-  }
-
-  _drawHoldBody(ctx, g, n, yHead, yTail, t) {
-    const { left, laneW, receptorY } = this.pf;
-    const col = LANE_COLORS[n.lane];
-    const cx = left + n.lane * laneW + laneW / 2;
-    const bw = this.noteW * 0.62;
-
-    // Once the head is struck the body stays pinned at the receptor and
-    // visibly drains away, which reads instantly as "keep holding".
-    const top = n.holdActive ? Math.min(yTail, receptorY) : yTail;
-    const bottom = n.holdActive ? receptorY : Math.min(yHead, receptorY + 200);
-    if (bottom - top < 1) return;
-
-    const dead = n.holdBroken;
-    const rgb = dead ? '110,118,140' : `${col[0]},${col[1]},${col[2]}`;
-    const base = dead ? 0.22 : n.holdActive ? 0.85 : 0.55;
-
-    ctx.save();
-    roundRect(ctx, cx - bw / 2, top, bw, bottom - top, bw / 2);
-    const grd = ctx.createLinearGradient(0, top, 0, bottom);
-    grd.addColorStop(0, `rgba(${rgb},${base * 0.5})`);
-    grd.addColorStop(1, `rgba(${rgb},${base})`);
-    ctx.fillStyle = grd;
-    ctx.fill();
-
-    // Energy scrolling down the body while it is being held.
-    if (n.holdActive && !dead) {
-      ctx.clip();
-      ctx.globalCompositeOperation = 'lighter';
-      const period = 46;
-      const off = (t * 190) % period;
-      for (let y = top - period + off; y < bottom; y += period) {
-        const gg = ctx.createLinearGradient(0, y, 0, y + period);
-        gg.addColorStop(0, `rgba(255,255,255,0)`);
-        gg.addColorStop(0.5, `rgba(255,255,255,0.22)`);
-        gg.addColorStop(1, `rgba(255,255,255,0)`);
-        ctx.fillStyle = gg;
-        ctx.fillRect(cx - bw / 2, y, bw, period);
-      }
-    }
-    ctx.restore();
-
-    // Tail cap.
-    if (yTail < receptorY + 30 && !dead) {
       ctx.save();
-      ctx.globalCompositeOperation = 'lighter';
-      ctx.fillStyle = `rgba(${rgb},0.85)`;
-      roundRect(ctx, cx - bw / 2, yTail - HOLD_CAP / 2, bw, HOLD_CAP / 2, 4);
+      roundRect(ctx, cx - bw / 2, top, bw, bottom - top, bw / 2);
+      const grd = ctx.createLinearGradient(0, top, 0, bottom);
+      grd.addColorStop(0, rgba(col, a * 0.55));
+      grd.addColorStop(1, rgba(col, a));
+      ctx.fillStyle = grd;
       ctx.fill();
+
+      if (n.holdActive && !n.holdBroken) {
+        ctx.clip();
+        ctx.globalCompositeOperation = 'lighter';
+        const period = 44;
+        const off = (t * 200) % period;
+        for (let y = top - period + off; y < bottom; y += period) {
+          const gg = ctx.createLinearGradient(0, y, 0, y + period);
+          gg.addColorStop(0, 'rgba(255,255,255,0)');
+          gg.addColorStop(0.5, 'rgba(255,255,255,0.2)');
+          gg.addColorStop(1, 'rgba(255,255,255,0)');
+          ctx.fillStyle = gg;
+          ctx.fillRect(cx - bw / 2, y, bw, period);
+        }
+      }
       ctx.restore();
     }
   }
 
-  _drawReceptors(ctx, g) {
+  _drawNotes(ctx, g, t) {
+    const { left, laneW } = this.pf;
+    const travel = g.travelTime;
+    const notes = g.song.notes;
+
+    // Notes are sorted by time, so once one is above the spawn line every
+    // later note is too and we can stop.
+    for (let i = g.renderFrom; i < notes.length; i++) {
+      const n = notes[i];
+      const y = this.yFor(n.t, t, travel);
+      if (y < -140) break;
+      if (n.gone || n.headJudged) continue;
+      if (y > this.h + 80) continue;
+
+      const sprite = this.noteSprites[n.play];
+      const cx = left + n.lane * laneW + laneW / 2;
+
+      // Fade and scale in near the spawn line to fake depth.
+      const appear = clamp((1 - (n.t - t) / travel) / 0.12, 0, 1);
+      const scale = lerp(0.88, 1, easeOutCubic(appear));
+      ctx.globalAlpha = easeOutCubic(appear);
+      ctx.drawImage(
+        sprite.canvas,
+        cx - (sprite.w * scale) / 2,
+        y - (sprite.h * scale) / 2,
+        sprite.w * scale,
+        sprite.h * scale
+      );
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  _drawReceptors(ctx) {
     const { left, width, laneW, receptorY } = this.pf;
+    const k = this.dark;
 
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
 
-    // Judgement line.
-    const lineGrad = ctx.createLinearGradient(left, 0, left + width, 0);
-    lineGrad.addColorStop(0, `rgba(${LANE_COLORS[0].join(',')},0.75)`);
-    lineGrad.addColorStop(1, `rgba(${LANE_COLORS[3].join(',')},0.75)`);
-    ctx.fillStyle = lineGrad;
-    ctx.fillRect(left, receptorY - 1.5, width, 3);
+    const line = ctx.createLinearGradient(left, 0, left + width, 0);
+    line.addColorStop(0, rgba(this.noteRgb[0], 0.55 * k));
+    line.addColorStop(0.5, `rgba(255,255,255,${0.75 * k})`);
+    line.addColorStop(1, rgba(this.noteRgb[0], 0.55 * k));
+    ctx.fillStyle = line;
+    roundRect(ctx, left, receptorY - 1.5, width, 3, 1.5);
+    ctx.fill();
 
-    // Soft bed of light under the line.
-    const bed = ctx.createLinearGradient(0, receptorY - 34, 0, receptorY + 26);
-    bed.addColorStop(0, 'rgba(140,180,255,0)');
-    bed.addColorStop(0.5, `rgba(160,190,255,${0.14 + 0.12 * this.energy})`);
-    bed.addColorStop(1, 'rgba(140,180,255,0)');
+    const bed = ctx.createLinearGradient(0, receptorY - 30, 0, receptorY + 22);
+    bed.addColorStop(0, 'rgba(150,190,255,0)');
+    bed.addColorStop(0.55, `rgba(170,205,255,${(0.1 + 0.12 * this.energy) * k})`);
+    bed.addColorStop(1, 'rgba(150,190,255,0)');
     ctx.fillStyle = bed;
-    ctx.fillRect(left, receptorY - 34, width, 60);
+    ctx.fillRect(left, receptorY - 30, width, 52);
 
-    for (let i = 0; i < 4; i++) {
-      const col = LANE_COLORS[i];
+    for (let i = 0; i < LANE_COUNT; i++) {
       const cx = left + i * laneW + laneW / 2;
-      const glow = Math.max(this.laneGlow[i], this.laneHit[i]);
-
+      const glow = Math.max(this.laneGlow[i], this.laneHit[i]) * k;
       if (glow > 0.01) {
-        const r = laneW * (0.6 + 0.35 * glow);
+        const col = this.noteRgb[this.laneHit[i] > 0.02 ? this.laneTint[i] : PLAIN];
+        const r = laneW * (0.55 + 0.32 * glow);
         const grd = ctx.createRadialGradient(cx, receptorY, 0, cx, receptorY, r);
-        grd.addColorStop(0, `rgba(${col[0]},${col[1]},${col[2]},${0.5 * glow})`);
-        grd.addColorStop(1, `rgba(${col[0]},${col[1]},${col[2]},0)`);
+        grd.addColorStop(0, rgba(col, 0.45 * glow));
+        grd.addColorStop(1, rgba(col, 0));
         ctx.fillStyle = grd;
         ctx.beginPath();
-        ctx.ellipse(cx, receptorY, r, r * 0.55, 0, 0, Math.PI * 2);
+        ctx.ellipse(cx, receptorY, r, r * 0.5, 0, 0, Math.PI * 2);
         ctx.fill();
       }
-
-      const s = this.padSprites[i];
-      const scale = 1 + glow * 0.12;
-      ctx.globalAlpha = 0.75 + glow * 0.25;
-      ctx.drawImage(
-        s.canvas,
-        cx - (s.w * scale) / 2,
-        receptorY - (s.h * scale) / 2,
-        s.w * scale,
-        s.h * scale
-      );
+      const s = this.padSprite;
+      const scale = 1 + glow * 0.1;
+      ctx.globalAlpha = (0.6 + glow * 0.4) * k;
+      ctx.drawImage(s.canvas, cx - (s.w * scale) / 2, receptorY + 12 - (s.h * scale) / 2, s.w * scale, s.h * scale);
       ctx.globalAlpha = 1;
     }
     ctx.restore();
+  }
 
-    // Key hints.
+  /**
+   * Two rows of key caps under the field: the lane keys, and the colour keys
+   * below them. This is the whole control scheme, always on screen.
+   */
+  _drawKeyCaps(ctx) {
+    const { left, laneW, receptorY } = this.pf;
+    const k = this.dark;
+    if (k < 0.02) return;
+    const capW = Math.min(laneW * 0.5, 34);
+    const capH = capW * 0.78;
+    const rowY = [receptorY + 34, receptorY + 34 + capH + 8];
+
     ctx.save();
-    ctx.font = `600 12px ${FONT}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < LANE_COUNT; i++) {
       const cx = left + i * laneW + laneW / 2;
-      ctx.fillStyle = `rgba(255,255,255,${0.32 + 0.5 * this.laneGlow[i]})`;
-      ctx.fillText(KEY_LABELS[i], cx, receptorY + 36);
+      for (let row = 0; row < 2; row++) {
+        const lit = row === 0 ? this.laneGlow[i] : this.colorGlow[i];
+        const col = row === 0 ? [225, 238, 255] : this.noteRgb[i + 1];
+        const y = rowY[row];
+        ctx.globalAlpha = k;
+        ctx.fillStyle = rgba(col, 0.1 + 0.5 * lit);
+        roundRect(ctx, cx - capW / 2, y - capH / 2, capW, capH, 7);
+        ctx.fill();
+        ctx.strokeStyle = rgba(col, 0.3 + 0.5 * lit);
+        ctx.lineWidth = 1.2;
+        roundRect(ctx, cx - capW / 2, y - capH / 2, capW, capH, 7);
+        ctx.stroke();
+        ctx.fillStyle = rgba(row === 0 ? [255, 255, 255] : col, 0.55 + 0.45 * lit);
+        ctx.font = `700 ${(capH * 0.5).toFixed(1)}px ${FONT}`;
+        ctx.fillText(this.keys[row === 0 ? i : LANE_COUNT + i], cx, y + 0.5);
+        ctx.globalAlpha = 1;
+      }
     }
     ctx.restore();
   }
 
   _drawCombo(ctx, g) {
     if (g.combo <= 2) return;
-    const { left, width, receptorY } = this.pf;
-    const cx = left + width / 2;
-    const y = receptorY - this.pf.travel * 0.42;
+    const { left, width, receptorY, travel } = this.pf;
 
     ctx.save();
-    ctx.translate(cx, y);
+    ctx.translate(left + width / 2, receptorY - travel * 0.44);
     ctx.scale(this.comboScale, this.comboScale);
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
 
     // Warms from near-white toward gold as the combo climbs.
-    const tier = clamp(g.combo / 220, 0, 1);
-    const col = [
-      Math.round(lerp(235, 255, tier)),
-      Math.round(lerp(245, 214, tier)),
-      Math.round(lerp(255, 140, tier)),
-    ];
-    const a = clamp((this.comboScale - 1) * 2.2, 0, 1);
+    const tier = clamp(g.combo / 240, 0, 1);
+    const col = [lerp(238, 255, tier), lerp(247, 214, tier), lerp(255, 138, tier)];
+    const a = clamp((this.comboScale - 1) * 2.4, 0, 1);
 
-    ctx.font = `800 ${(62 * this.ui).toFixed(1)}px ${FONT}`;
+    ctx.font = `800 ${(52 * this.ui).toFixed(1)}px ${FONT}`;
     if (a > 0.01) {
-      ctx.shadowColor = `rgba(${col[0]},${col[1]},${col[2]},${a})`;
-      ctx.shadowBlur = 26 * a;
+      ctx.shadowColor = rgba(col, a);
+      ctx.shadowBlur = 22 * a;
     }
-    ctx.fillStyle = `rgba(${col[0]},${col[1]},${col[2]},0.88)`;
+    ctx.fillStyle = rgba(col, 0.7);
     ctx.fillText(String(g.combo), 0, 0);
     ctx.shadowBlur = 0;
 
-    ctx.font = `600 ${(13 * this.ui).toFixed(1)}px ${FONT}`;
+    ctx.font = `700 ${(11 * this.ui).toFixed(1)}px ${FONT}`;
     if (ctx.letterSpacing !== undefined) ctx.letterSpacing = '4px';
-    ctx.fillStyle = 'rgba(210,225,255,0.45)';
-    ctx.fillText('COMBO', 0, 36 * this.ui);
+    ctx.fillStyle = 'rgba(206,224,255,0.42)';
+    ctx.fillText('COMBO', 0, 32 * this.ui);
     if (ctx.letterSpacing !== undefined) ctx.letterSpacing = '0px';
     ctx.restore();
   }
 
-  _drawJudgement(ctx, g, t) {
-    const { left, width, receptorY } = this.pf;
-    const cx = left + width / 2;
-
-    // Judgement text: a spring pop that settles, then fades and lifts.
+  _drawJudgement(ctx, t) {
     const fx = this.judgeFx;
     if (!fx.show) return;
     const age = t - fx.time;
-    const LIFE = 0.62;
+    const LIFE = 0.6;
     if (age < 0 || age > LIFE) {
       if (age > LIFE) fx.show = false;
       return;
     }
+    const { left, width, receptorY, travel } = this.pf;
     const p = age / LIFE;
-    const pop = age < 0.24 ? easeOutBack(clamp(age / 0.24, 0, 1), 2.4) : 1;
-    const scale = lerp(0.7, 1, pop);
+    const pop = age < 0.22 ? easeOutBack(clamp(age / 0.22, 0, 1), 2.2) : 1;
     const alpha = p < 0.6 ? 1 : 1 - easeOutCubic((p - 0.6) / 0.4);
-    const rise = easeOutQuint(p) * 16;
 
     ctx.save();
-    ctx.translate(cx, receptorY - this.pf.travel * 0.22 - rise);
-    ctx.scale(scale, scale);
+    ctx.translate(left + width / 2, receptorY - travel * 0.2 - easeOutQuint(p) * 14);
+    ctx.scale(lerp(0.72, 1, pop), lerp(0.72, 1, pop));
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    const c = fx.color;
-    ctx.shadowColor = `rgba(${c[0]},${c[1]},${c[2]},${0.8 * alpha})`;
-    ctx.shadowBlur = 22;
-    ctx.font = `800 ${(34 * this.ui).toFixed(1)}px ${FONT}`;
+    ctx.shadowColor = rgba(fx.rgb, 0.75 * alpha);
+    ctx.shadowBlur = 18;
+    ctx.font = `800 ${(30 * this.ui).toFixed(1)}px ${FONT}`;
     if (ctx.letterSpacing !== undefined) ctx.letterSpacing = '2px';
-    ctx.fillStyle = `rgba(${c[0]},${c[1]},${c[2]},${alpha})`;
+    ctx.fillStyle = rgba(fx.rgb, alpha);
     ctx.fillText(fx.label, 0, 0);
     ctx.shadowBlur = 0;
     if (ctx.letterSpacing !== undefined) ctx.letterSpacing = '0px';
 
     // Early/late hint helps players self-correct without being noisy.
     if (fx.label !== 'MISS' && fx.label !== 'PERFECT' && Math.abs(fx.delta) > 0.001) {
-      ctx.font = `600 12px ${FONT}`;
-      ctx.fillStyle = `rgba(200,215,245,${alpha * 0.65})`;
-      ctx.fillText(fx.delta > 0 ? 'LATE' : 'EARLY', 0, 24);
+      ctx.font = `700 11px ${FONT}`;
+      ctx.fillStyle = `rgba(206,222,250,${alpha * 0.6})`;
+      ctx.fillText(fx.delta > 0 ? 'LATE' : 'EARLY', 0, 22);
     }
     ctx.restore();
   }
@@ -655,54 +685,62 @@ export class Renderer {
     const { w, ui } = this;
     const pad = this.hudPad;
     const px = (n) => `${(n * ui).toFixed(1)}px`;
+    const k = this.dark;
 
-    // Progress rail across the very top.
     const prog = clamp(t / g.song.duration, 0, 1);
-    ctx.fillStyle = 'rgba(255,255,255,0.07)';
+    ctx.fillStyle = `rgba(255,255,255,${0.08 * k})`;
     ctx.fillRect(0, 0, w, 3);
     const pg = ctx.createLinearGradient(0, 0, w, 0);
-    pg.addColorStop(0, `rgba(${LANE_COLORS[0].join(',')},0.9)`);
-    pg.addColorStop(1, `rgba(${LANE_COLORS[3].join(',')},0.9)`);
+    pg.addColorStop(0, rgba(this.accent, 0.9 * k));
+    pg.addColorStop(1, rgba(this.noteRgb[0], 0.9 * k));
     ctx.fillStyle = pg;
     ctx.fillRect(0, 0, w * prog, 3);
 
     ctx.save();
+    ctx.globalAlpha = k;
     ctx.textBaseline = 'top';
 
-    // Song info, left.
     ctx.textAlign = 'left';
     ctx.font = `700 ${px(15)} ${FONT}`;
-    ctx.fillStyle = 'rgba(236,244,255,0.9)';
-    ctx.fillText(g.song.name, pad, pad);
-    ctx.font = `500 ${px(12)} ${FONT}`;
-    ctx.fillStyle = 'rgba(180,198,230,0.6)';
+    ctx.fillStyle = 'rgba(238,246,255,0.92)';
+    ctx.fillText(g.song.title, pad, pad);
+
+    const diff = difficultyMeta(g.song.difficulty);
+    ctx.font = `700 ${px(11)} ${FONT}`;
+    const label = `${diff.label} ${g.song.level}`;
+    const tw = ctx.measureText(label).width;
+    ctx.fillStyle = rgba(hexToRgb(diff.hex), 0.22);
+    roundRect(ctx, pad, pad + 22 * ui, tw + 16, 17 * ui, 8);
+    ctx.fill();
+    ctx.fillStyle = diff.hex;
+    ctx.fillText(label, pad + 8, pad + 25 * ui);
+
+    ctx.fillStyle = 'rgba(184,202,232,0.55)';
+    ctx.font = `600 ${px(11)} ${FONT}`;
     ctx.fillText(
-      `${g.song.difficulty}  ·  ${fmtTime(Math.max(0, t))} / ${fmtTime(g.song.duration)}`,
-      pad,
-      pad + 20 * ui
+      `${fmtTime(Math.max(0, t))} / ${fmtTime(g.song.duration)}`,
+      pad + tw + 24,
+      pad + 25 * ui
     );
 
-    // Score and accuracy, right.
     ctx.textAlign = 'right';
     ctx.font = `700 ${px(30)} ${FONT}`;
     if (ctx.letterSpacing !== undefined) ctx.letterSpacing = '1px';
-    ctx.fillStyle = 'rgba(255,255,255,0.95)';
+    ctx.fillStyle = 'rgba(255,255,255,0.96)';
     ctx.fillText(fmtScore(this.displayScore), w - pad, pad - 4 * ui);
     if (ctx.letterSpacing !== undefined) ctx.letterSpacing = '0px';
 
-    ctx.font = `600 ${px(13)} ${FONT}`;
-    ctx.fillStyle = 'rgba(180,198,230,0.75)';
-    ctx.fillText(
-      `${this.displayAcc.toFixed(2)}%   ·   ${g.maxCombo}x MAX`,
-      w - pad,
-      pad + 30 * ui
-    );
+    ctx.font = `600 ${px(12)} ${FONT}`;
+    ctx.fillStyle = 'rgba(184,202,232,0.7)';
+    ctx.fillText(`${this.displayAcc.toFixed(2)}%  ·  ${g.maxCombo}x MAX`, w - pad, pad + 30 * ui);
 
     if (g.autoplay) {
-      ctx.textAlign = 'center';
-      ctx.font = `700 ${px(12)} ${FONT}`;
-      ctx.fillStyle = `rgba(255,226,122,${0.45 + 0.35 * Math.sin(t * 4)})`;
-      ctx.fillText('AUTOPLAY', w / 2, pad);
+      // Under the difficulty pill rather than centred: the middle of the screen
+      // belongs to the playfield.
+      ctx.textAlign = 'left';
+      ctx.font = `800 ${px(10)} ${FONT}`;
+      ctx.fillStyle = `rgba(255,215,94,${0.45 + 0.3 * Math.sin(t * 4)})`;
+      ctx.fillText('AUTOPLAY', pad, pad + 46 * ui);
     }
     ctx.restore();
 
@@ -719,13 +757,13 @@ export class Renderer {
     ctx.fillRect(0, 0, w, h);
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    const scale = lerp(1.6, 1, easeOutExpo(clamp(age * 2.4, 0, 1)));
+    const scale = lerp(1.5, 1, easeOutExpo(clamp(age * 2.4, 0, 1)));
     const alpha = clamp(age * 6, 0, 1) * clamp((1 - age) * 4, 0, 1);
     ctx.translate(w / 2, h / 2);
     ctx.scale(scale, scale);
-    ctx.font = `800 96px ${FONT}`;
-    ctx.shadowColor = `rgba(120,180,255,${0.8 * alpha})`;
-    ctx.shadowBlur = 40;
+    ctx.font = `800 88px ${FONT}`;
+    ctx.shadowColor = rgba(this.accent, 0.8 * alpha);
+    ctx.shadowBlur = 34;
     ctx.fillStyle = `rgba(255,255,255,${alpha})`;
     ctx.fillText(n > 0 ? String(n) : 'GO', 0, 0);
     ctx.restore();

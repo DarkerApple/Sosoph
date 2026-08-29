@@ -60,3 +60,14 @@ export function roundRect(ctx, x, y, w, h, r) {
 
 /** "rgb(r,g,b)" style colour with alpha, from a [r,g,b] triple. */
 export const rgba = (c, a) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+
+/** Hex string -> [r,g,b]. Accepts "#rgb" and "#rrggbb". */
+export function hexToRgb(hex) {
+  let h = String(hex).replace('#', '').trim();
+  if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+  const n = parseInt(h, 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+/** Scale a colour toward black (`k` < 1) without leaving the byte range. */
+export const shade = (c, k) => c.map((v) => clamp(v * k, 0, 255));

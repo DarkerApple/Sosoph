@@ -1,33 +1,48 @@
-// Low-latency lane input for keyboard and touch.
+// Low-latency input for eight channels: four lane keys (D F J K) and four
+// colour keys on the row below (C V N M).
 //
-// Key events carry a `timeStamp` on the same clock as `performance.now()`, so
-// we can reconstruct the exact moment a key went down rather than judging it on
-// the next animation frame. That is worth several milliseconds of accuracy.
+// Key events carry a `timeStamp` on the same clock as `performance.now()`, so a
+// press can be judged at the instant the key physically went down rather than
+// on the next animation frame. That is worth several milliseconds of accuracy.
 
-export const LANE_COUNT = 4;
+import { keyTable, LANE_COUNT, COLOR_COUNT } from './theme.js';
 
-const KEY_MAP = {
-  KeyD: 0, KeyF: 1, KeyJ: 2, KeyK: 3,
-  KeyS: 0, KeyL: 3,
-  ArrowLeft: 0, ArrowDown: 1, ArrowUp: 2, ArrowRight: 3,
-};
+export const CHANNELS = LANE_COUNT + COLOR_COUNT;
+
+/** Lane `n` is channel `n`; colour 1..4 lives on the four channels above. */
+export const colorChannel = (color) => LANE_COUNT + color - 1;
+
+/** Arrow keys mirror the lane row for players without a full keyboard. */
+const ALIASES = { ArrowLeft: 0, ArrowDown: 1, ArrowUp: 2, ArrowRight: 3 };
 
 export class InputManager {
-  constructor() {
-    this.held = new Array(LANE_COUNT).fill(false);
+  constructor(settings) {
+    this.settings = settings;
+    this.held = new Array(CHANNELS).fill(false);
     this.enabled = false;
-    /** Queue of {lane, down, time} drained by the game each frame. */
+    /** Drained by the game once per frame. */
     this.queue = [];
     this.onPause = null;
     this.touchLanes = new Map(); // pointerId -> lane
-    /** Filled in by the renderer so touches can be mapped to lanes. */
+    /** Set by the renderer so touches can be mapped to lanes. */
     this.layout = null;
+
+    this.rebind();
 
     this._onKeyDown = this._onKeyDown.bind(this);
     this._onKeyUp = this._onKeyUp.bind(this);
     this._onPointerDown = this._onPointerDown.bind(this);
     this._onPointerMove = this._onPointerMove.bind(this);
     this._onPointerUp = this._onPointerUp.bind(this);
+  }
+
+  /** Rebuild the keycode lookup after the bindings change. */
+  rebind() {
+    this.map = new Map();
+    keyTable(this.settings).forEach((code, ch) => this.map.set(code, ch));
+    for (const [code, ch] of Object.entries(ALIASES)) {
+      if (!this.map.has(code)) this.map.set(code, ch);
+    }
   }
 
   attach(canvas) {
@@ -37,34 +52,19 @@ export class InputManager {
     canvas.addEventListener('pointermove', this._onPointerMove);
     window.addEventListener('pointerup', this._onPointerUp);
     window.addEventListener('pointercancel', this._onPointerUp);
-    // A dropped keyup (alt-tab, OS shortcut) would otherwise leave a lane stuck.
+    // A dropped keyup (alt-tab, OS shortcut) would otherwise stick a channel on.
     window.addEventListener('blur', () => this.releaseAll());
   }
 
-  /** Convert a DOM event timestamp into "seconds ago", clamped for sanity. */
+  /** DOM event timestamp -> "seconds ago", clamped for sanity. */
   _eventAge(ev) {
     const ts = typeof ev.timeStamp === 'number' ? ev.timeStamp : 0;
     const age = (performance.now() - ts) / 1000;
     return age >= 0 && age < 0.25 ? age : 0;
   }
 
-  _push(lane, down, ev) {
-    this.queue.push({ lane, down, age: this._eventAge(ev) });
-  }
-
-  _onKeyDown(ev) {
-    if (ev.code === 'Escape') {
-      if (this.onPause) this.onPause();
-      return;
-    }
-    // Let focused UI controls keep their own arrow-key behaviour.
-    if (this._isFormTarget(ev)) return;
-    const lane = KEY_MAP[ev.code];
-    if (lane === undefined) return;
-    ev.preventDefault();
-    if (ev.repeat || !this.enabled || this.held[lane]) return;
-    this.held[lane] = true;
-    this._push(lane, true, ev);
+  _push(channel, down, ev, wildcard = false) {
+    this.queue.push({ channel, down, age: this._eventAge(ev), wildcard });
   }
 
   _isFormTarget(ev) {
@@ -72,14 +72,28 @@ export class InputManager {
     return tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA';
   }
 
+  _onKeyDown(ev) {
+    if (ev.code === 'Escape') {
+      if (this.onPause) this.onPause();
+      return;
+    }
+    if (this._isFormTarget(ev)) return;
+    const ch = this.map.get(ev.code);
+    if (ch === undefined) return;
+    ev.preventDefault();
+    if (ev.repeat || !this.enabled || this.held[ch]) return;
+    this.held[ch] = true;
+    this._push(ch, true, ev);
+  }
+
   _onKeyUp(ev) {
     if (this._isFormTarget(ev)) return;
-    const lane = KEY_MAP[ev.code];
-    if (lane === undefined) return;
+    const ch = this.map.get(ev.code);
+    if (ch === undefined) return;
     ev.preventDefault();
-    if (!this.held[lane]) return;
-    this.held[lane] = false;
-    if (this.enabled) this._push(lane, false, ev);
+    if (!this.held[ch]) return;
+    this.held[ch] = false;
+    if (this.enabled) this._push(ch, false, ev);
   }
 
   _laneAt(clientX) {
@@ -90,6 +104,10 @@ export class InputManager {
     return Math.max(0, Math.min(LANE_COUNT - 1, Math.floor(x / l.laneW)));
   }
 
+  /**
+   * Touch has no second row to reach for, so a tap is a wildcard: it takes
+   * whatever note is nearest in that lane, coloured or not.
+   */
   _onPointerDown(ev) {
     if (!this.enabled || ev.pointerType === 'mouse') return;
     const lane = this._laneAt(ev.clientX);
@@ -98,7 +116,7 @@ export class InputManager {
     this.touchLanes.set(ev.pointerId, lane);
     if (!this.held[lane]) {
       this.held[lane] = true;
-      this._push(lane, true, ev);
+      this._push(lane, true, ev, true);
     }
   }
 
@@ -112,7 +130,7 @@ export class InputManager {
     this.touchLanes.set(ev.pointerId, lane);
     if (!this.held[lane]) {
       this.held[lane] = true;
-      this._push(lane, true, ev);
+      this._push(lane, true, ev, true);
     }
   }
 
@@ -129,15 +147,15 @@ export class InputManager {
     }
     if (this.held[lane]) {
       this.held[lane] = false;
-      if (this.enabled) this._push(lane, false, ev);
+      if (this.enabled) this._push(lane, false, ev, true);
     }
   }
 
   releaseAll() {
-    for (let i = 0; i < LANE_COUNT; i++) {
+    for (let i = 0; i < CHANNELS; i++) {
       if (this.held[i]) {
         this.held[i] = false;
-        this.queue.push({ lane: i, down: false, age: 0 });
+        this.queue.push({ channel: i, down: false, age: 0, wildcard: false });
       }
     }
     this.touchLanes.clear();

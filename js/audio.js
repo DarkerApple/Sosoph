@@ -397,6 +397,163 @@ export class AudioEngine {
     n.stop(t + 1.7);
   }
 
+  /** Struck electric-piano tone: FM bell partial over a soft triangle body. */
+  piano(t, midi, dur, gain = 1) {
+    const ctx = this.ctx;
+    const f = mtof(midi);
+    const g = ctx.createGain();
+
+    const body = ctx.createOscillator();
+    body.type = 'triangle';
+    body.frequency.value = f;
+
+    // The FM partial is what gives it the struck-tine attack; it decays much
+    // faster than the body, so the tone softens as it rings out.
+    const mod = ctx.createOscillator();
+    mod.type = 'sine';
+    mod.frequency.value = f * 2.01;
+    const modGain = ctx.createGain();
+    modGain.gain.setValueAtTime(f * 2.4, t);
+    modGain.gain.exponentialRampToValueAtTime(f * 0.05, t + Math.min(dur, 0.5));
+    mod.connect(modGain);
+    modGain.connect(body.frequency);
+
+    this._env(g, t, 0.004, Math.max(dur, 0.25) * 0.9, 0.22 * gain, 0.09 * gain, dur * 0.5);
+    body.connect(g);
+    g.connect(this.master);
+    this._sendTo(g, 0.4, 0.18);
+
+    body.start(t); mod.start(t);
+    body.stop(t + dur + 0.6); mod.stop(t + dur + 0.6);
+  }
+
+  /** Short detuned chord stab — the punctuation in the busier sections. */
+  stab(t, midis, dur, gain = 1) {
+    const ctx = this.ctx;
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.Q.value = 4;
+    lp.frequency.setValueAtTime(5200, t);
+    lp.frequency.exponentialRampToValueAtTime(900, t + dur + 0.05);
+    for (const m of midis) {
+      for (const det of [-11, 11]) {
+        const o = ctx.createOscillator();
+        o.type = 'sawtooth';
+        o.frequency.value = mtof(m);
+        o.detune.value = det;
+        const og = ctx.createGain();
+        og.gain.value = 0.13;
+        o.connect(og);
+        og.connect(lp);
+        o.start(t);
+        o.stop(t + dur + 0.3);
+      }
+    }
+    const g = ctx.createGain();
+    this._env(g, t, 0.005, dur + 0.08, 0.26 * gain);
+    lp.connect(g);
+    g.connect(this.master);
+    this._sendTo(g, 0.3, 0.25);
+  }
+
+  /** Glassy bell for intros and outros. */
+  bell(t, midi, dur, gain = 1) {
+    const ctx = this.ctx;
+    const f = mtof(midi);
+    const g = ctx.createGain();
+    for (const [mult, lvl] of [[1, 0.5], [2.76, 0.18], [5.4, 0.08]]) {
+      const o = ctx.createOscillator();
+      o.type = 'sine';
+      o.frequency.value = f * mult;
+      const og = ctx.createGain();
+      og.gain.setValueAtTime(lvl, t);
+      og.gain.exponentialRampToValueAtTime(0.0001, t + dur * (1 / mult) + 0.2);
+      o.connect(og);
+      og.connect(g);
+      o.start(t);
+      o.stop(t + dur + 0.5);
+    }
+    this._env(g, t, 0.003, dur, 0.2 * gain);
+    g.connect(this.master);
+    this._sendTo(g, 0.85, 0.35);
+  }
+
+  /** Pitched tom, used for fills. */
+  tom(t, midi = 45, gain = 1) {
+    const ctx = this.ctx;
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(mtof(midi) * 1.6, t);
+    o.frequency.exponentialRampToValueAtTime(mtof(midi) * 0.8, t + 0.16);
+    this._env(g, t, 0.003, 0.28, 0.5 * gain);
+    o.connect(g);
+    g.connect(this.master);
+    this._sendTo(g, 0.22, 0);
+    o.start(t);
+    o.stop(t + 0.35);
+  }
+
+  /** Ride cymbal: a thin ping riding on a short wash. */
+  ride(t, gain = 1) {
+    const ctx = this.ctx;
+    const n = this._noiseSource(t, 0.4);
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = 7200;
+    bp.Q.value = 1.6;
+    const g = ctx.createGain();
+    this._env(g, t, 0.002, 0.34, 0.09 * gain);
+    n.connect(bp);
+    bp.connect(g);
+    g.connect(this.master);
+    this._sendTo(g, 0.25, 0);
+    n.stop(t + 0.45);
+  }
+
+  /** Sub drop under section changes. */
+  sub(t, midi, dur, gain = 1) {
+    const ctx = this.ctx;
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(mtof(midi), t);
+    o.frequency.exponentialRampToValueAtTime(mtof(midi - 12), t + dur);
+    this._env(g, t, 0.01, dur * 0.4, 0.5 * gain, 0.34 * gain, dur * 0.7);
+    o.connect(g);
+    g.connect(this.master);
+    o.start(t);
+    o.stop(t + dur + 0.2);
+  }
+
+  /** Airy vowel pad that sits above the harmony without crowding the lead. */
+  choir(t, midis, dur, gain = 1) {
+    const ctx = this.ctx;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = 900;
+    bp.Q.value = 1.1;
+    for (const m of midis) {
+      for (const det of [-14, 0, 14]) {
+        const o = ctx.createOscillator();
+        o.type = 'sawtooth';
+        o.frequency.value = mtof(m);
+        o.detune.value = det;
+        const og = ctx.createGain();
+        og.gain.value = 0.07;
+        o.connect(og);
+        og.connect(bp);
+        o.start(t);
+        o.stop(t + dur + 1.0);
+      }
+    }
+    const g = ctx.createGain();
+    this._env(g, t, 0.6, 1.0, 0.19 * gain, 0.14 * gain, dur);
+    bp.connect(g);
+    g.connect(this.master);
+    this._sendTo(g, 1.0, 0.15);
+  }
+
   /** Short tick layered over the player's own hits. Zero-latency feedback. */
   hitSound(lane = 0) {
     if (!this.ctx || this.hitSoundVolume <= 0) return;
@@ -432,13 +589,21 @@ export class AudioEngine {
 
   // ----------------------------------------------------------- transport ---
 
-  async start(song, leadIn = 0.6) {
+  /**
+   * Begin playback. `from` starts the transport partway into the song, which is
+   * what the chart editor scrubs with; events before that point are skipped
+   * rather than crammed into the first scheduler tick.
+   */
+  async start(song, leadIn = 0.6, from = 0) {
     await this.createContext();
     this.song = song;
     this.events = song.events;
     this.eventIndex = 0;
-    this.startCtxTime = this.ctx.currentTime + leadIn;
-    this.smoothTime = -leadIn;
+    while (this.eventIndex < this.events.length && this.events[this.eventIndex].t < from) {
+      this.eventIndex++;
+    }
+    this.startCtxTime = this.ctx.currentTime + leadIn - from;
+    this.smoothTime = from - leadIn;
     this.clockPrimed = false;
     this.running = true;
 
@@ -468,6 +633,13 @@ export class AudioEngine {
         case 'pad': this.pad(at, e.n, e.d, e.g); break;
         case 'riser': this.riser(at, e.d, e.g); break;
         case 'crash': this.crash(at, e.g); break;
+        case 'piano': this.piano(at, e.n, e.d, e.g); break;
+        case 'stab': this.stab(at, e.n, e.d, e.g); break;
+        case 'bell': this.bell(at, e.n, e.d, e.g); break;
+        case 'tom': this.tom(at, e.n, e.g); break;
+        case 'ride': this.ride(at, e.g); break;
+        case 'sub': this.sub(at, e.n, e.d, e.g); break;
+        case 'choir': this.choir(at, e.n, e.d, e.g); break;
       }
     }
   }

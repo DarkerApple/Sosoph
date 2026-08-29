@@ -1,7 +1,7 @@
 {
   "name": "sosoph",
   "version": "1.0.0",
-  "description": "A smooth four-key rhythm game with a live-synthesized soundtrack.",
+  "description": "A four-key rhythm game with coloured notes and a live-synthesised soundtrack.",
   "type": "module",
   "scripts": {
     "start": "node server.js",
