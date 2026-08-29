@@ -21,7 +21,7 @@ Four lanes on the home row, and a second row of **colour keys** under the same
 four fingers:
 
 ```
-  D   F   J   K      plain notes — press the note's own lane key
+  D   F   J   K      white notes — press the note's own lane key
   C   V   N   M      coloured notes — press the matching colour key
 ```
 
@@ -29,6 +29,9 @@ four fingers:
 the lane it usually appears in. So a coloured note means *same finger, one row
 down* — which is why the chart still reads as an ordinary four-key chart and the
 colour is a single extra bit of information rather than a second thing to track.
+
+Plain notes are white and coloured notes are not, so which row a note wants is
+readable from the note itself, with no legend to memorise.
 
 | | |
 |---|---|
@@ -99,6 +102,26 @@ Import/export is plain JSON.
 | Scroll / zoom | wheel, <kbd>Ctrl</kbd>+wheel |
 | Undo / redo | <kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> |
 
+## The look
+
+One rule holds the whole interface together: **colour carries meaning, and
+nothing else is coloured.**
+
+The pages are ink on paper — flat surfaces, hairline rules, no shadows, no
+gradients, and numbers set in a monospace face so levels, scores and counts line
+up in columns. The only hues anywhere are the four note colours and the five
+difficulty colours, which means a splash of colour is always telling you
+something rather than decorating something.
+
+The playfield follows from that: a black field, white lane rules, a solid white
+judge line, and notes that are either white or one of the four colours. Hit
+effects are deliberately small and clipped to the field, so the only thing that
+ever moves outside a lane is the score.
+
+Menus are pages, not overlays — a header with tabs, one section at a time, and
+the canvas hidden entirely while you are in them. Nothing is being drawn behind
+the menus, and nothing animates until a song starts.
+
 ## What makes it feel smooth
 
 **A drift-corrected transport clock.** `AudioContext.currentTime` only advances
@@ -127,7 +150,7 @@ touches `shadowBlur` and the GC never causes a hitch mid-song.
 ## Layout
 
 ```
-index.html            song select, settings, pause, results
+index.html            song select, settings, results pages; pause overlay
 editor.html           chart editor
 css/style.css         menu chrome (the playfield is all canvas)
 css/editor.css        editor chrome

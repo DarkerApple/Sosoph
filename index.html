@@ -3,158 +3,193 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
-<meta name="theme-color" content="#eef4fb" />
+<meta name="theme-color" content="#f4f4f2" />
 <title>Sosoph</title>
 <meta name="description" content="A four-key rhythm game with coloured notes and a live-synthesised soundtrack." />
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%2300c8b4'/%3E%3Crect x='6' y='13' width='20' height='6' rx='3' fill='white'/%3E%3C/svg%3E" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%2316171a'/%3E%3Crect x='6' y='9' width='20' height='5' fill='white'/%3E%3Crect x='6' y='18' width='20' height='5' fill='%23ff5563'/%3E%3C/svg%3E" />
 <link rel="stylesheet" href="css/style.css" />
 </head>
 <body>
-<canvas id="stage"></canvas>
 
-<main id="ui">
+<canvas id="stage" aria-hidden="true"></canvas>
 
-  <!-- ----------------------------------------------------- song select -->
-  <section class="screen is-active" id="screen-select">
-    <header class="top">
-      <div class="brand">Sosoph</div>
-      <nav class="top-nav">
-        <a class="chip-btn" href="editor.html">Editor</a>
-        <button class="chip-btn" id="btn-settings" type="button">Settings</button>
+<div id="shell">
+  <header class="topbar">
+    <div class="topbar-inner">
+      <span class="logo">Sosoph</span>
+      <nav class="tabs">
+        <button class="tab is-on" id="tab-songs" type="button" data-page="page-songs">Songs</button>
+        <button class="tab" id="tab-settings" type="button" data-page="page-settings">Settings</button>
+        <a class="tab tab-link" href="editor.html">Editor</a>
       </nav>
-    </header>
+    </div>
+  </header>
 
-    <div class="select">
-      <ul class="songs" id="song-list" role="listbox" aria-label="Songs"></ul>
+  <main id="pages">
 
-      <aside class="detail card" id="detail">
-        <div class="detail-head">
-          <span class="unit" id="d-unit"></span>
-          <h2 id="d-title">—</h2>
-          <p id="d-artist">—</p>
+    <!-- ------------------------------------------------------------ songs -->
+    <section class="page is-on" id="page-songs">
+      <div class="wrap songs-layout">
+
+        <div class="col">
+          <h1 class="page-title">Choose a song</h1>
+          <ul class="song-list" id="song-list" role="listbox" aria-label="Songs"></ul>
         </div>
 
-        <div class="diffs" id="d-diffs" role="tablist" aria-label="Difficulty"></div>
+        <div class="col side">
+          <div class="panel" id="detail">
+            <p class="eyebrow" id="d-unit"></p>
+            <h2 class="detail-title" id="d-title">—</h2>
+            <p class="detail-sub" id="d-artist">—</p>
 
-        <dl class="stats">
-          <div><dt>BPM</dt><dd id="d-bpm">—</dd></div>
-          <div><dt>Notes</dt><dd id="d-notes">—</dd></div>
-          <div><dt>Colour</dt><dd id="d-colored">—</dd></div>
-          <div><dt>Length</dt><dd id="d-length">—</dd></div>
-        </dl>
+            <h3 class="label">Difficulty</h3>
+            <div class="diff-row" id="d-diffs" role="tablist" aria-label="Difficulty"></div>
 
-        <div class="best" id="d-best"><span>Best</span><b>not played yet</b></div>
+            <dl class="facts">
+              <div><dt>BPM</dt><dd id="d-bpm">—</dd></div>
+              <div><dt>Length</dt><dd id="d-length">—</dd></div>
+              <div><dt>Notes</dt><dd id="d-notes">—</dd></div>
+              <div><dt>Coloured</dt><dd id="d-colored">—</dd></div>
+            </dl>
 
-        <button class="btn primary big" id="btn-play" type="button">Play</button>
-        <p class="hint">
-          <kbd>D</kbd><kbd>F</kbd><kbd>J</kbd><kbd>K</kbd> lanes ·
-          <kbd>C</kbd><kbd>V</kbd><kbd>N</kbd><kbd>M</kbd> colours
-        </p>
-      </aside>
-    </div>
-  </section>
+            <div class="best-row"><span>Best score</span><b id="d-best">Not played yet</b></div>
 
-  <!-- -------------------------------------------------------- settings -->
-  <section class="screen" id="screen-settings">
-    <div class="card sheet">
-      <header class="sheet-head">
-        <h2>Settings</h2>
-        <button class="chip-btn" id="btn-close-settings" type="button">Done</button>
-      </header>
+            <button class="btn primary block" id="btn-play" type="button">Play</button>
+          </div>
 
-      <div class="sheet-body">
-        <label class="row" for="set-speed">
-          <span>Note speed</span>
-          <input type="range" id="set-speed" min="1" max="4" step="0.1" />
-          <output id="out-speed"></output>
-        </label>
-
-        <label class="row" for="set-offset">
-          <span>Audio offset<em>negative if you hit late</em></span>
-          <input type="range" id="set-offset" min="-150" max="150" step="1" />
-          <output id="out-offset"></output>
-        </label>
-
-        <label class="row" for="set-volume">
-          <span>Music volume</span>
-          <input type="range" id="set-volume" min="0" max="1" step="0.01" />
-          <output id="out-volume"></output>
-        </label>
-
-        <label class="row" for="set-hit">
-          <span>Hit sound</span>
-          <input type="range" id="set-hit" min="0" max="1" step="0.01" />
-          <output id="out-hit"></output>
-        </label>
-
-        <label class="row" for="set-effects">
-          <span>Effects</span>
-          <input type="range" id="set-effects" min="0" max="1.4" step="0.1" />
-          <output id="out-effects"></output>
-        </label>
-
-        <label class="row switch-row" for="set-colors">
-          <span>Colour notes<em>off plays every note on the lane keys</em></span>
-          <input type="checkbox" id="set-colors" />
-          <i class="switch" aria-hidden="true"></i>
-        </label>
-
-        <label class="row switch-row" for="set-auto">
-          <span>Autoplay<em>watch a perfect run</em></span>
-          <input type="checkbox" id="set-auto" />
-          <i class="switch" aria-hidden="true"></i>
-        </label>
-
-        <div class="group">
-          <div class="group-head"><h3>Keys</h3><button class="chip-btn" id="btn-reset-keys" type="button">Reset</button></div>
-          <div class="keygrid" id="keygrid"></div>
+          <div class="panel keys-panel">
+            <h3 class="label">Controls</h3>
+            <ul class="legend" id="legend"></ul>
+            <p class="keys-note">Each colour key sits under the lane its notes usually fall in, so a coloured note means the same finger, one row down. <kbd>Esc</kbd> pauses.</p>
+          </div>
         </div>
 
-        <div class="group">
-          <div class="group-head"><h3>Note colours</h3><button class="chip-btn" id="btn-reset-colors" type="button">Reset</button></div>
-          <div class="colorgrid" id="colorgrid"></div>
+      </div>
+    </section>
+
+    <!-- --------------------------------------------------------- settings -->
+    <section class="page" id="page-settings">
+      <div class="wrap narrow">
+        <h1 class="page-title">Settings</h1>
+
+        <section class="panel">
+          <h2 class="label">Gameplay</h2>
+
+          <label class="row" for="set-speed">
+            <span class="row-name">Note speed</span>
+            <input type="range" id="set-speed" min="1" max="4" step="0.1" />
+            <output id="out-speed"></output>
+          </label>
+
+          <label class="row" for="set-offset">
+            <span class="row-name">Audio offset<em>Go negative if you tend to hit late</em></span>
+            <input type="range" id="set-offset" min="-150" max="150" step="1" />
+            <output id="out-offset"></output>
+          </label>
+
+          <label class="row toggle" for="set-colors">
+            <span class="row-name">Coloured notes<em>Off plays every note on the lane keys</em></span>
+            <input type="checkbox" id="set-colors" />
+            <i class="switch" aria-hidden="true"></i>
+          </label>
+
+          <label class="row toggle" for="set-auto">
+            <span class="row-name">Autoplay<em>Watch a perfect run. Scores are not recorded</em></span>
+            <input type="checkbox" id="set-auto" />
+            <i class="switch" aria-hidden="true"></i>
+          </label>
+        </section>
+
+        <section class="panel">
+          <h2 class="label">Sound and effects</h2>
+
+          <label class="row" for="set-volume">
+            <span class="row-name">Music volume</span>
+            <input type="range" id="set-volume" min="0" max="1" step="0.01" />
+            <output id="out-volume"></output>
+          </label>
+
+          <label class="row" for="set-hit">
+            <span class="row-name">Hit sound</span>
+            <input type="range" id="set-hit" min="0" max="1" step="0.01" />
+            <output id="out-hit"></output>
+          </label>
+
+          <label class="row" for="set-effects">
+            <span class="row-name">Hit effects<em>Lower this if the playfield feels busy</em></span>
+            <input type="range" id="set-effects" min="0" max="1.4" step="0.1" />
+            <output id="out-effects"></output>
+          </label>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2 class="label">Keys</h2>
+            <button class="btn small" id="btn-reset-keys" type="button">Reset</button>
+          </div>
+          <p class="panel-note">Click a key, then press the one you want.</p>
+          <div class="bind-grid" id="keygrid"></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2 class="label">Note colours</h2>
+            <button class="btn small" id="btn-reset-colors" type="button">Reset</button>
+          </div>
+          <div class="bind-grid" id="colorgrid"></div>
+        </section>
+      </div>
+    </section>
+
+    <!-- ---------------------------------------------------------- results -->
+    <section class="page" id="page-result">
+      <div class="wrap narrow">
+        <h1 class="page-title">Results</h1>
+
+        <section class="panel result-head">
+          <p class="eyebrow" id="res-song">—</p>
+          <div class="result-grade">
+            <span class="grade" id="res-grade">S</span>
+            <div>
+              <div class="result-score" id="res-score">0</div>
+              <div class="result-acc" id="res-acc">0.00%</div>
+            </div>
+          </div>
+          <p class="result-banner" id="res-banner"></p>
+        </section>
+
+        <section class="panel">
+          <h2 class="label">Breakdown</h2>
+          <ul class="tally">
+            <li><span class="dot" style="--c:#16171a"></span><span>Perfect</span><b id="res-perfect">0</b></li>
+            <li><span class="dot" style="--c:#5f646c"></span><span>Great</span><b id="res-great">0</b></li>
+            <li><span class="dot" style="--c:#8d939b"></span><span>Good</span><b id="res-good">0</b></li>
+            <li><span class="dot" style="--c:#c62828"></span><span>Miss</span><b id="res-miss">0</b></li>
+            <li><span class="dot" style="--c:#1565c0"></span><span>Max combo</span><b id="res-combo">0</b></li>
+          </ul>
+        </section>
+
+        <div class="button-row">
+          <button class="btn primary" id="btn-retry" type="button">Retry</button>
+          <button class="btn" id="btn-back" type="button">Back to songs</button>
         </div>
       </div>
+    </section>
+
+  </main>
+</div>
+
+<!-- ------------------------------------------------------------- pause -->
+<div class="overlay" id="overlay-pause">
+  <div class="overlay-panel">
+    <h2>Paused</h2>
+    <div class="button-col">
+      <button class="btn primary" id="btn-resume" type="button">Resume</button>
+      <button class="btn" id="btn-restart" type="button">Restart</button>
+      <button class="btn" id="btn-quit" type="button">Quit to songs</button>
     </div>
-  </section>
-
-  <!-- ----------------------------------------------------------- pause -->
-  <section class="screen dim" id="screen-pause">
-    <div class="card pause">
-      <h2>Paused</h2>
-      <div class="actions column">
-        <button class="btn primary" id="btn-resume" type="button">Resume</button>
-        <button class="btn" id="btn-restart" type="button">Restart</button>
-        <button class="btn ghost" id="btn-quit" type="button">Quit</button>
-      </div>
-    </div>
-  </section>
-
-  <!-- --------------------------------------------------------- results -->
-  <section class="screen dim" id="screen-result">
-    <div class="card result">
-      <div class="grade" id="res-grade">S</div>
-      <div class="res-banner" id="res-banner"></div>
-      <div class="res-song" id="res-song">—</div>
-      <div class="res-score" id="res-score">0</div>
-      <div class="res-acc" id="res-acc">0.00%</div>
-
-      <ul class="tally">
-        <li style="--c:#ffd75e"><span>Perfect</span><b id="res-perfect">0</b></li>
-        <li style="--c:#5fe0c4"><span>Great</span><b id="res-great">0</b></li>
-        <li style="--c:#6fb7ff"><span>Good</span><b id="res-good">0</b></li>
-        <li style="--c:#ff7d95"><span>Miss</span><b id="res-miss">0</b></li>
-        <li style="--c:#b45cf0"><span>Max combo</span><b id="res-combo">0</b></li>
-      </ul>
-
-      <div class="actions">
-        <button class="btn primary" id="btn-retry" type="button">Retry</button>
-        <button class="btn ghost" id="btn-back" type="button">Song list</button>
-      </div>
-    </div>
-  </section>
-
-</main>
+  </div>
+</div>
 
 <script type="module" src="js/main.js"></script>
 </body>

@@ -46,18 +46,18 @@ export class Particles {
 
   /** Burst of sparks when a note is struck. */
   burst(x, y, tint, strength = 1, quality = 1) {
-    const count = Math.round(clamp(8 + 12 * strength, 4, 22) * quality);
+    const count = Math.round(clamp(5 + 8 * strength, 3, 13) * quality);
     for (let i = 0; i < count; i++) {
       const p = this._take();
       const ang = -Math.PI / 2 + (Math.random() - 0.5) * 2.5;
-      const speed = (120 + Math.random() * 380) * strength;
+      const speed = (110 + Math.random() * 260) * strength;
       p.kind = 'spark';
-      p.x = x + (Math.random() - 0.5) * 26;
-      p.y = y + (Math.random() - 0.5) * 8;
+      p.x = x + (Math.random() - 0.5) * 20;
+      p.y = y + (Math.random() - 0.5) * 6;
       p.vx = Math.cos(ang) * speed * 0.55;
       p.vy = Math.sin(ang) * speed;
-      p.maxLife = p.life = 0.32 + Math.random() * 0.42;
-      p.size = 1.6 + Math.random() * 3.4;
+      p.maxLife = p.life = 0.24 + Math.random() * 0.3;
+      p.size = 1.1 + Math.random() * 2.2;
       p.tint = tint;
       p.drag = 2.2;
       p.gravity = 340;
@@ -73,10 +73,10 @@ export class Particles {
     p.y = y;
     p.vx = 0;
     p.vy = 0;
-    p.maxLife = p.life = 0.42;
-    p.size = size * strength;
+    p.maxLife = p.life = 0.3;
+    p.size = size * strength * 0.5;
     p.tint = tint;
-    p.alpha = 0.85 * strength;
+    p.alpha = 0.6 * strength;
   }
 
   /** Soft light bloom at the receptor. */
@@ -85,10 +85,10 @@ export class Particles {
     p.kind = 'bloom';
     p.x = x;
     p.y = y;
-    p.maxLife = p.life = 0.3;
-    p.size = size;
+    p.maxLife = p.life = 0.22;
+    p.size = size * 0.5;
     p.tint = tint;
-    p.alpha = 0.9;
+    p.alpha = 0.45;
   }
 
   /** Debris shed by a held note while it is being sustained. */
@@ -165,20 +165,20 @@ export class Particles {
         ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
       } else if (p.kind === 'ring') {
         const e = easeOutQuint(t);
-        const r = p.size * (0.25 + e * 1.0);
+        const r = p.size * (0.35 + e * 0.9);
         const a = (1 - t) * (1 - t) * p.alpha;
         ctx.strokeStyle = `rgba(${col[0]},${col[1]},${col[2]},${a})`;
-        ctx.lineWidth = 3.5 * (1 - e * 0.75);
+        ctx.lineWidth = 2.2 * (1 - e * 0.7);
         ctx.beginPath();
-        ctx.ellipse(p.x, p.y, r, r * 0.42, 0, 0, Math.PI * 2);
+        ctx.ellipse(p.x, p.y, r, r * 0.34, 0, 0, Math.PI * 2);
         ctx.stroke();
       } else if (p.kind === 'bloom') {
         const e = easeOutCubic(t);
-        const r = p.size * (0.5 + e * 0.9);
+        const r = p.size * (0.5 + e * 0.7);
         const a = (1 - t) * p.alpha;
         const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r);
-        g.addColorStop(0, `rgba(255,255,255,${a * 0.8})`);
-        g.addColorStop(0.35, `rgba(${col[0]},${col[1]},${col[2]},${a * 0.5})`);
+        g.addColorStop(0, `rgba(255,255,255,${a * 0.6})`);
+        g.addColorStop(0.35, `rgba(${col[0]},${col[1]},${col[2]},${a * 0.35})`);
         g.addColorStop(1, `rgba(${col[0]},${col[1]},${col[2]},0)`);
         ctx.fillStyle = g;
         ctx.beginPath();

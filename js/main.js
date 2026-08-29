@@ -1,4 +1,8 @@
-// Application shell: song select, settings, screen routing and the frame loop.
+// Application shell: page routing, song select, settings and the frame loop.
+//
+// The menus are ordinary pages — a header with tabs, and one section visible at
+// a time. The canvas is only shown while a song is running, so nothing is being
+// drawn behind the menus.
 
 import { AudioEngine } from './audio.js';
 import { Renderer } from './renderer.js';
@@ -8,14 +12,15 @@ import { catalogue, loadSong, playable } from './songs/index.js';
 import { getChart } from './charts.js';
 import { settings, commit, CHANNEL_NAMES } from './settings.js';
 import {
-  NOTE_COLORS, difficultyMeta, keyTable, keyLabel, GRADE_HEX, UI,
+  NOTE_COLORS, PLAIN_NOTE_HEX, LANE_COUNT, difficultyMeta, keyTable, keyLabel,
+  GRADE_HEX, UI,
 } from './theme.js';
 import { load, save } from './storage.js';
 import { fmtScore, fmtTime, clamp } from './util.js';
 
 const $ = (id) => document.getElementById(id);
 
-// ---------------------------------------------------------------- setup ---
+// ----------------------------------------------------------------- setup ---
 
 const canvas = $('stage');
 const renderer = new Renderer(canvas, settings);
@@ -39,15 +44,39 @@ window.addEventListener('resize', () => {
 let best = load('best.v1', {});
 const bestKey = (songId, diff) => `${songId}/${diff}`;
 
-// -------------------------------------------------------------- screens ---
+// ---------------------------------------------------------------- routing --
 
-let current = 'screen-select';
+/** Which menu page is showing. Empty while a song is running. */
+let page = 'page-songs';
 
-function show(id) {
-  current = id;
-  for (const el of document.querySelectorAll('.screen')) {
-    el.classList.toggle('is-active', el.id === id);
+function showPage(id) {
+  page = id;
+  document.body.classList.remove('playing');
+  $('overlay-pause').classList.remove('is-on');
+  for (const el of document.querySelectorAll('.page')) {
+    el.classList.toggle('is-on', el.id === id);
   }
+  for (const el of document.querySelectorAll('.tab[data-page]')) {
+    el.classList.toggle('is-on', el.dataset.page === id);
+  }
+  window.scrollTo(0, 0);
+}
+
+function enterPlay() {
+  page = '';
+  document.body.classList.add('playing');
+  $('overlay-pause').classList.remove('is-on');
+}
+
+function setPaused(paused) {
+  $('overlay-pause').classList.toggle('is-on', paused);
+}
+
+for (const tab of document.querySelectorAll('.tab[data-page]')) {
+  tab.addEventListener('click', () => {
+    blip('move');
+    showPage(tab.dataset.page);
+  });
 }
 
 async function blip(kind) {
@@ -66,7 +95,7 @@ function applySettings() {
   renderer.refreshColors();
 }
 
-// ---------------------------------------------------------- song select ---
+// ------------------------------------------------------------ song select --
 
 const SONGS = catalogue();
 let songIndex = 0;
@@ -77,16 +106,30 @@ function difficultiesOf(entry) {
   const list = entry.difficulties.map((d) => ({ ...d, custom: false }));
   const custom = getChart(entry.id);
   if (custom) {
-    list.push({ id: 'custom', level: 0, notes: custom.notes.length, custom: true,
-      colored: custom.notes.filter((n) => n.color).length });
+    list.push({
+      id: 'custom',
+      level: custom.notes.length ? '★' : 0,
+      notes: custom.notes.length,
+      colored: custom.notes.filter((n) => n.color).length,
+      custom: true,
+    });
   }
   return list;
 }
 
-function currentEntry() { return SONGS[songIndex]; }
-function currentDiff() {
+const currentEntry = () => SONGS[songIndex];
+const currentDiff = () => {
   const list = difficultiesOf(currentEntry());
   return list[clamp(diffIndex, 0, list.length - 1)];
+};
+
+/** A solid coloured level chip, used in both the list and the difficulty row. */
+function badge(diff) {
+  const b = document.createElement('span');
+  b.className = 'badge';
+  b.style.setProperty('--c', difficultyMeta(diff.id).hex);
+  b.textContent = diff.level;
+  return b;
 }
 
 function renderSongList() {
@@ -95,12 +138,10 @@ function renderSongList() {
   SONGS.forEach((s, i) => {
     const li = document.createElement('li');
     li.className = 'song' + (i === songIndex ? ' is-current' : '');
-    li.style.setProperty('--accent', s.accent);
     li.setAttribute('role', 'option');
     li.setAttribute('aria-selected', String(i === songIndex));
 
     const main = document.createElement('div');
-    main.className = 'song-main';
     const title = document.createElement('div');
     title.className = 'song-title';
     title.textContent = s.title;
@@ -109,17 +150,11 @@ function renderSongList() {
     sub.textContent = `${s.unit} · ${s.bpm} BPM · ${fmtTime(s.duration)}`;
     main.append(title, sub);
 
-    const levels = document.createElement('div');
-    levels.className = 'song-levels';
-    for (const d of difficultiesOf(s)) {
-      const b = document.createElement('span');
-      b.className = 'lv';
-      b.style.setProperty('--c', d.custom ? UI.pink : difficultyMeta(d.id).hex);
-      b.textContent = d.custom ? '★' : d.level;
-      levels.append(b);
-    }
+    const badges = document.createElement('div');
+    badges.className = 'badges';
+    for (const d of difficultiesOf(s)) badges.append(badge(d));
 
-    li.append(main, levels);
+    li.append(main, badges);
     li.addEventListener('click', () => selectSong(i));
     list.append(li);
   });
@@ -131,7 +166,6 @@ function renderDetail() {
   diffIndex = clamp(diffIndex, 0, diffs.length - 1);
   const d = diffs[diffIndex];
 
-  document.querySelector('.detail').style.setProperty('--accent', s.accent);
   $('d-unit').textContent = s.unit;
   $('d-title').textContent = s.title;
   $('d-artist').textContent = s.artist;
@@ -139,34 +173,25 @@ function renderDetail() {
   const tabs = $('d-diffs');
   tabs.replaceChildren();
   diffs.forEach((entry, i) => {
-    const meta = difficultyMeta(entry.id);
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'diff' + (i === diffIndex ? ' is-on' : '');
-    b.style.setProperty('--c', entry.custom ? UI.pink : meta.hex);
     b.setAttribute('role', 'tab');
     b.setAttribute('aria-selected', String(i === diffIndex));
-    const lv = document.createElement('b');
-    lv.textContent = entry.custom ? '★' : entry.level;
-    const name = document.createElement('span');
-    name.textContent = entry.custom ? 'CUSTOM' : meta.label;
-    b.append(lv, name);
+    b.append(badge(entry), document.createTextNode(difficultyMeta(entry.id).label));
     b.addEventListener('click', () => { diffIndex = i; renderDetail(); blip('move'); });
     tabs.append(b);
   });
 
   $('d-bpm').textContent = s.bpm;
+  $('d-length').textContent = fmtTime(s.duration);
   $('d-notes').textContent = d.notes;
   $('d-colored').textContent = d.colored;
-  $('d-length').textContent = fmtTime(s.duration);
 
   const rec = best[bestKey(s.id, d.id)];
-  const bestEl = $('d-best').querySelector('b');
-  bestEl.textContent = rec
+  $('d-best').textContent = rec
     ? `${rec.grade} · ${fmtScore(rec.score)} · ${rec.accuracy.toFixed(2)}%`
-    : 'not played yet';
-
-  renderer.setMood(s.accent);
+    : 'Not played yet';
 }
 
 function selectSong(i) {
@@ -179,7 +204,7 @@ function selectSong(i) {
   if (el) el.scrollIntoView({ block: 'nearest' });
 }
 
-// ------------------------------------------------------------ settings ----
+// --------------------------------------------------------------- settings --
 
 const CONTROLS = [
   ['set-speed', 'out-speed', 'speed', (v) => `${v.toFixed(1)}×`, parseFloat],
@@ -191,7 +216,7 @@ const CONTROLS = [
 
 const TOGGLES = [['set-colors', 'colorNotes'], ['set-auto', 'autoplay']];
 
-/** The keybind button currently waiting for a keypress, if any. */
+/** The key binding currently waiting for a keypress, if any. */
 let listening = null;
 
 function renderKeyGrid() {
@@ -201,11 +226,11 @@ function renderKeyGrid() {
   CHANNEL_NAMES.forEach((chan, i) => {
     const b = document.createElement('button');
     b.type = 'button';
-    b.className = 'keybind' + (listening === i ? ' is-listening' : '');
+    b.className = 'bind' + (listening === i ? ' is-listening' : '');
     const small = document.createElement('small');
     small.textContent = chan.label;
     const strong = document.createElement('b');
-    strong.textContent = listening === i ? '…' : keyLabel(codes[i]);
+    strong.textContent = listening === i ? 'Press…' : keyLabel(codes[i]);
     b.append(small, strong);
     b.addEventListener('click', () => {
       listening = listening === i ? null : i;
@@ -215,12 +240,49 @@ function renderKeyGrid() {
   });
 }
 
+/**
+ * The controls legend. Generated rather than written into the markup so it
+ * always shows the live key bindings and note colours.
+ */
+function renderLegend() {
+  const list = $('legend');
+  const codes = keyTable(settings).map(keyLabel);
+  list.replaceChildren();
+
+  const row = (hex, keys, name, rim) => {
+    const li = document.createElement('li');
+    const sw = document.createElement('span');
+    sw.className = 'swatch';
+    const bar = document.createElement('i');
+    bar.style.setProperty('--c', hex);
+    if (rim) bar.style.setProperty('--rim', '0 0 0 1.5px #fff');
+    sw.append(bar);
+    const kb = document.createElement('span');
+    kb.className = 'keys';
+    for (const k of keys) {
+      const el = document.createElement('kbd');
+      el.textContent = k;
+      kb.append(el);
+    }
+    const label = document.createElement('span');
+    label.className = 'legend-name';
+    label.textContent = name;
+    li.append(sw, kb, label);
+    list.append(li);
+  };
+
+  row(PLAIN_NOTE_HEX, codes.slice(0, LANE_COUNT), 'Lane notes', false);
+  NOTE_COLORS.forEach((c, i) => {
+    row(settings.colorHex[c.id] || c.hex, [codes[LANE_COUNT + i]], c.label, true);
+  });
+}
+
 function renderColorGrid() {
   const grid = $('colorgrid');
   grid.replaceChildren();
   for (const c of NOTE_COLORS) {
     const wrap = document.createElement('label');
-    wrap.className = 'colorpick';
+    wrap.className = 'bind';
     const small = document.createElement('small');
     small.textContent = c.label;
     const inp = document.createElement('input');
@@ -230,6 +292,7 @@ function renderColorGrid() {
       settings.colorHex[c.id] = inp.value;
       commit();
       renderer.refreshColors();
+      renderLegend();
     });
     wrap.append(small, inp);
     grid.append(wrap);
@@ -265,6 +328,7 @@ function initSettings() {
     commit();
     applySettings();
     renderKeyGrid();
+    renderLegend();
   });
 
   $('btn-reset-colors').addEventListener('click', () => {
@@ -272,6 +336,7 @@ function initSettings() {
     commit();
     renderer.refreshColors();
     renderColorGrid();
+    renderLegend();
   });
 
   renderKeyGrid();
@@ -280,7 +345,7 @@ function initSettings() {
 
 /** Capture the next keypress for the binding being edited. */
 window.addEventListener('keydown', (ev) => {
-  if (listening === null || current !== 'screen-settings') return;
+  if (listening === null || page !== 'page-settings') return;
   ev.preventDefault();
   ev.stopPropagation();
   if (ev.code !== 'Escape') {
@@ -295,9 +360,10 @@ window.addEventListener('keydown', (ev) => {
   }
   listening = null;
   renderKeyGrid();
+  renderLegend();
 }, true);
 
-// ----------------------------------------------------------------- flow ---
+// ------------------------------------------------------------------ flow ---
 
 async function startGame() {
   // A focused button would otherwise swallow the gameplay keys.
@@ -309,9 +375,8 @@ async function startGame() {
     ? playable(entry.id, 'custom', getChart(entry.id).notes, 'Custom')
     : loadSong(entry.id, diff.id);
 
-  renderer.setMood(entry.accent);
   game.song = song;
-  show('');
+  enterPlay();
   await game.start();
 }
 
@@ -321,26 +386,20 @@ async function leaveGame() {
   game.particles.clear();
 }
 
+function backToSongs() {
+  renderSongList();
+  renderDetail();
+  showPage('page-songs');
+}
+
 $('btn-play').addEventListener('click', async () => {
   await blip('confirm');
   await startGame();
 });
 
-$('btn-settings').addEventListener('click', () => {
-  blip('move');
-  show('screen-settings');
-});
-
-$('btn-close-settings').addEventListener('click', () => {
-  blip('confirm');
-  listening = null;
-  renderKeyGrid();
-  show('screen-select');
-});
-
 $('btn-resume').addEventListener('click', async () => {
   await blip('confirm');
-  show('');
+  setPaused(false);
   await game.togglePause();
 });
 
@@ -353,7 +412,7 @@ $('btn-restart').addEventListener('click', async () => {
 $('btn-quit').addEventListener('click', async () => {
   await blip('move');
   await leaveGame();
-  backToSelect();
+  backToSongs();
 });
 
 $('btn-retry').addEventListener('click', async () => {
@@ -365,30 +424,24 @@ $('btn-retry').addEventListener('click', async () => {
 $('btn-back').addEventListener('click', async () => {
   await blip('move');
   await leaveGame();
-  backToSelect();
+  backToSongs();
 });
-
-function backToSelect() {
-  renderSongList();
-  renderDetail();
-  show('screen-select');
-}
 
 async function requestPause() {
   if (!game.started || game.finished) return;
   const paused = await game.togglePause();
-  show(paused ? 'screen-pause' : '');
+  setPaused(paused);
 }
 
 input.onPause = requestPause;
 
-// Song-select keyboard navigation, and Escape to back out of settings.
+// Song-list keyboard navigation, and Escape to leave settings.
 window.addEventListener('keydown', (ev) => {
-  if (current === 'screen-settings') {
-    if (ev.code === 'Escape') { listening = null; renderKeyGrid(); show('screen-select'); }
+  if (page === 'page-settings') {
+    if (ev.code === 'Escape') { listening = null; renderKeyGrid(); showPage('page-songs'); }
     return;
   }
-  if (current !== 'screen-select') return;
+  if (page !== 'page-songs') return;
   const tag = ev.target && ev.target.tagName;
   if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
 
@@ -417,22 +470,22 @@ document.addEventListener('visibilitychange', () => {
   if (document.hidden && game.started && !game.paused && !game.finished) requestPause();
 });
 
-// -------------------------------------------------------------- results ---
+// --------------------------------------------------------------- results ---
 
 function showResults(res) {
   audio.stop();
 
+  $('res-song').textContent = `${song.title} — ${difficultyMeta(song.difficulty).label}`;
   $('res-grade').textContent = res.grade;
-  $('res-song').textContent = `${song.title} · ${song.label.toUpperCase()}`;
   $('res-score').textContent = fmtScore(res.score);
-  $('res-acc').textContent = `${res.accuracy.toFixed(2)}%`;
+  $('res-acc').textContent = `${res.accuracy.toFixed(2)}% accuracy`;
   $('res-perfect').textContent = res.counts.PERFECT;
   $('res-great').textContent = res.counts.GREAT;
   $('res-good').textContent = res.counts.GOOD;
   $('res-miss').textContent = res.counts.MISS;
   $('res-combo').textContent = `${res.maxCombo}x`;
 
-  document.querySelector('.result').style.setProperty('--grade', GRADE_HEX[res.grade] || UI.teal);
+  document.querySelector('.result-head').style.setProperty('--grade', GRADE_HEX[res.grade] || UI.ink);
 
   const banner = $('res-banner');
   banner.textContent = res.autoplay
@@ -445,31 +498,31 @@ function showResults(res) {
   if (!res.autoplay && (!best[key] || res.score > best[key].score)) {
     best[key] = { score: res.score, accuracy: res.accuracy, grade: res.grade };
     save('best.v1', best);
-    if (!banner.textContent) banner.textContent = 'New Best';
+    if (!banner.textContent) banner.textContent = 'New best score';
   }
 
-  show('screen-result');
+  showPage('page-result');
 }
 
-// ----------------------------------------------------------------- loop ---
+// ------------------------------------------------------------------ loop ---
 
 let last = performance.now();
 
 function frame(now) {
   const dt = clamp((now - last) / 1000, 0, 0.1);
   last = now;
-
+  // Nothing is drawn between songs: the menus are plain pages and the canvas
+  // is hidden, so the loop idles rather than painting a background nobody sees.
   if (game.started) {
     game.update(dt);
     renderer.draw(game, dt);
-  } else {
-    renderer.drawIdle(now / 1000, dt);
   }
   requestAnimationFrame(frame);
 }
 
 renderSongList();
 renderDetail();
+renderLegend();
 initSettings();
 applySettings();
 requestAnimationFrame(frame);

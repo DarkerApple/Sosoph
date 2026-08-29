@@ -16,6 +16,8 @@ import { clamp, roundRect, rgba, fmtTime, shade } from './util.js';
 
 const $ = (id) => document.getElementById(id);
 const FONT = `system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif`;
+const MONO = `ui-monospace, 'SF Mono', Menlo, Consolas, monospace`;
+const PLAYHEAD = '#ff2d95';
 
 const canvas = $('ed-canvas');
 const ctx = canvas.getContext('2d');
@@ -273,13 +275,16 @@ function draw() {
   }
 
   ctx.clearRect(0, 0, w, h);
-  ctx.fillStyle = '#0e1426';
+  ctx.fillStyle = '#101114';
   ctx.fillRect(0, 0, w, h);
 
   const t0 = timeAt(h);
   const t1 = timeAt(-20);
 
-  // --- grid ---------------------------------------------------------------
+  // --- field and grid -----------------------------------------------------
+  ctx.fillStyle = '#050506';
+  ctx.fillRect(left, 0, laneW * LANE_COUNT, h);
+
   const spb = state.def.spb;
   const div = state.snap || 4;
   const step = spb / div;
@@ -293,11 +298,11 @@ function draw() {
     const onBar = Math.abs(beat % 4) < 1e-6;
     const onBeat = Math.abs(beat % 1) < 1e-6;
     ctx.fillStyle = onBar
-      ? 'rgba(150,190,255,0.42)'
-      : onBeat ? 'rgba(150,190,255,0.2)' : 'rgba(150,190,255,0.08)';
+      ? 'rgba(255,255,255,0.34)'
+      : onBeat ? 'rgba(255,255,255,0.16)' : 'rgba(255,255,255,0.07)';
     ctx.fillRect(left, y, fieldW, onBar ? 1.6 : 1);
     if (onBar) {
-      ctx.fillStyle = 'rgba(160,195,255,0.5)';
+      ctx.fillStyle = 'rgba(255,255,255,0.42)';
       ctx.font = `700 10px ${FONT}`;
       ctx.textAlign = 'right';
       ctx.fillText(String(Math.round(beat / 4) + 1), left - 10, y - 3);
@@ -305,11 +310,9 @@ function draw() {
   }
   ctx.restore();
 
-  // --- lanes --------------------------------------------------------------
-  ctx.fillStyle = 'rgba(255,255,255,0.03)';
-  ctx.fillRect(left, 0, fieldW, h);
+  // --- lane rules ---------------------------------------------------------
   for (let i = 0; i <= LANE_COUNT; i++) {
-    ctx.fillStyle = i === 0 || i === LANE_COUNT ? 'rgba(160,200,255,0.4)' : 'rgba(160,200,255,0.18)';
+    ctx.fillStyle = i === 0 || i === LANE_COUNT ? 'rgba(255,255,255,0.32)' : 'rgba(255,255,255,0.12)';
     ctx.fillRect(left + i * laneW - 0.5, 0, 1, h);
   }
 
@@ -324,7 +327,7 @@ function draw() {
       if (t < t0 || t > t1) continue;
       const y = yFor(t);
       const len = 5 + hit.weight * 18;
-      ctx.fillStyle = `rgba(120,220,255,${0.14 + hit.weight * 0.5})`;
+      ctx.fillStyle = `rgba(255,255,255,${0.12 + hit.weight * 0.4})`;
       ctx.fillRect(right - len, y - 0.5, len, 1.6);
     }
     ctx.restore();
@@ -338,9 +341,9 @@ function draw() {
   for (const sec of state.def.sections) {
     if (sec.start < t0 || sec.start > t1) continue;
     const y = yFor(sec.start);
-    ctx.fillStyle = 'rgba(255,255,255,0.1)';
+    ctx.fillStyle = 'rgba(255,255,255,0.14)';
     ctx.fillRect(left + fieldW + 10, y - 0.5, 46, 1);
-    ctx.fillStyle = 'rgba(190,215,255,0.6)';
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
     ctx.fillText(sec.name.toUpperCase(), left + fieldW + 10, y - 5);
   }
   ctx.restore();
@@ -353,8 +356,8 @@ function draw() {
     if (yBot < -20 || yTop > h) continue;
     const cx = left + n.lane * laneW + laneW / 2;
     const col = noteRgb[n.color];
-    ctx.fillStyle = rgba(col, 0.34);
-    roundRect(ctx, cx - laneW * 0.18, yTop, laneW * 0.36, yBot - yTop, laneW * 0.18);
+    ctx.fillStyle = rgba(col, 0.3);
+    roundRect(ctx, cx - laneW * 0.16, yTop, laneW * 0.32, yBot - yTop, 3);
     ctx.fill();
   }
 
@@ -376,10 +379,11 @@ function draw() {
   }
 
   // --- playhead -----------------------------------------------------------
-  ctx.fillStyle = 'rgba(255,120,170,0.9)';
+  // Magenta is the one hue the note palette does not use, so the playhead can
+  // never be mistaken for a note.
+  ctx.fillStyle = PLAYHEAD;
   ctx.fillRect(left - 10, playY - 1, fieldW + 20, 2);
-  ctx.fillStyle = 'rgba(255,120,170,0.9)';
-  ctx.font = `700 10px ${FONT}`;
+  ctx.font = `700 10px ${MONO}`;
   ctx.textAlign = 'right';
   ctx.fillText(fmtTime(state.view), left - 10, playY + 14);
 
@@ -387,10 +391,10 @@ function draw() {
   ctx.textAlign = 'center';
   for (let i = 0; i < LANE_COUNT; i++) {
     const cx = left + i * laneW + laneW / 2;
-    ctx.font = `700 12px ${FONT}`;
-    ctx.fillStyle = 'rgba(226,238,255,0.7)';
+    ctx.font = `700 12px ${MONO}`;
+    ctx.fillStyle = 'rgba(255,255,255,0.75)';
     ctx.fillText(keyCaps[i], cx, playY + 26);
-    ctx.font = `700 11px ${FONT}`;
+    ctx.font = `700 11px ${MONO}`;
     ctx.fillStyle = rgba(noteRgb[i + 1], 0.85);
     ctx.fillText(keyCaps[LANE_COUNT + i], cx, playY + 44);
   }
@@ -403,10 +407,9 @@ function drawNote(n, y) {
   drawNoteShape(cx, y, noteRgb[n.color], n.color !== PLAIN);
   if (n === state.selected) {
     const w = layout.laneW * 0.8;
-    ctx.strokeStyle = '#ff78aa';
+    ctx.strokeStyle = PLAYHEAD;
     ctx.lineWidth = 2;
-    roundRect(ctx, cx - w / 2 - 3, y - 11, w + 6, 22, 8);
-    ctx.stroke();
+    ctx.strokeRect(cx - w / 2 - 3, y - 11, w + 6, 22);
   }
 }
 
@@ -414,15 +417,17 @@ function drawNoteShape(cx, y, col, colored) {
   const w = layout.laneW * 0.8;
   const h = 15;
   const grad = ctx.createLinearGradient(0, y - h / 2, 0, y + h / 2);
-  grad.addColorStop(0, rgba(shade(col, 1.35), 1));
-  grad.addColorStop(1, rgba(shade(col, 0.6), 1));
+  grad.addColorStop(0, rgba(shade(col, colored ? 1.25 : 1), 1));
+  grad.addColorStop(1, rgba(shade(col, colored ? 0.7 : 0.82), 1));
   ctx.fillStyle = grad;
-  roundRect(ctx, cx - w / 2, y - h / 2, w, h, h / 2);
+  roundRect(ctx, cx - w / 2, y - h / 2, w, h, 4);
   ctx.fill();
-  ctx.strokeStyle = 'rgba(255,255,255,0.85)';
-  ctx.lineWidth = colored ? 2 : 1.3;
-  roundRect(ctx, cx - w / 2, y - h / 2, w, h, h / 2);
-  ctx.stroke();
+  if (colored) {
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2;
+    roundRect(ctx, cx - w / 2 + 1, y - h / 2 + 1, w - 2, h - 2, 3);
+    ctx.stroke();
+  }
   if (colored) {
     ctx.strokeStyle = 'rgba(255,255,255,0.95)';
     ctx.lineWidth = 1.8;
@@ -471,13 +476,17 @@ function buildSeedOptions() {
 function buildPalette() {
   const grid = $('ed-palette');
   grid.replaceChildren();
-  const entries = [{ id: 'plain', label: 'PLAIN', hex: null }, ...NOTE_COLORS];
+  const entries = [{ id: 'plain', label: 'Plain' }, ...NOTE_COLORS];
   entries.forEach((c, i) => {
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'swatch' + (state.color === i ? ' is-on' : '');
-    b.style.setProperty('--c', `rgb(${noteRgb[i].join(',')})`);
-    b.textContent = i === 0 ? '·' : keyCaps[LANE_COUNT + i - 1];
+    const bar = document.createElement('i');
+    bar.style.setProperty('--c', `rgb(${noteRgb[i].join(',')})`);
+    if (i !== PLAIN) bar.style.setProperty('--rim', '0 0 0 1.5px #fff');
+    const cap = document.createElement('span');
+    cap.textContent = i === PLAIN ? keyCaps.slice(0, LANE_COUNT).join('') : keyCaps[LANE_COUNT + i - 1];
+    b.append(bar, cap);
     b.title = `${c.label} — press ${i + 1}`;
     b.addEventListener('click', () => { state.color = i; buildPalette(); });
     grid.append(b);

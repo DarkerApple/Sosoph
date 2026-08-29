@@ -15,10 +15,10 @@ import { hexToRgb } from './util.js';
 export const PLAIN = 0;
 
 export const NOTE_COLORS = [
-  { id: 'red', label: 'Red', key: 'KeyC', hex: '#ff4d6d' },
-  { id: 'yellow', label: 'Yellow', key: 'KeyV', hex: '#ffc233' },
-  { id: 'green', label: 'Green', key: 'KeyN', hex: '#3ddc84' },
-  { id: 'blue', label: 'Blue', key: 'KeyM', hex: '#4d9cff' },
+  { id: 'red', label: 'Red', key: 'KeyC', hex: '#ff5563' },
+  { id: 'yellow', label: 'Yellow', key: 'KeyV', hex: '#ffc63d' },
+  { id: 'green', label: 'Green', key: 'KeyN', hex: '#46d97e' },
+  { id: 'blue', label: 'Blue', key: 'KeyM', hex: '#5aa4ff' },
 ];
 
 export const COLOR_COUNT = NOTE_COLORS.length;
@@ -35,38 +35,54 @@ export const LANE_COUNT = 4;
 export const homeLaneOf = (color) => color - 1;
 export const colorOfLane = (lane) => lane + 1;
 
-// PJSK-flavoured palette: teal-forward, high-key menus, dark playfield.
+/**
+ * The whole design rests on one rule: colour carries meaning, and nothing else
+ * is coloured. The chrome is ink on paper; the only hues anywhere are the four
+ * note colours and the five difficulty colours. These match the custom
+ * properties in `css/style.css`, for the few places that draw chrome on canvas.
+ */
 export const UI = {
-  teal: '#00c8b4',
-  tealDeep: '#009e8e',
-  pink: '#ff6aa2',
-  ink: '#26314a',
+  ink: '#16171a',
+  inkDim: '#5f646c',
+  paper: '#f4f4f2',
 };
 
-/** Plain notes share one colour in every lane, the way PJSK taps do. */
-export const PLAIN_NOTE_HEX = '#37d6ff';
+/**
+ * Plain notes are white. That makes the whole control scheme readable from the
+ * note alone: white means the lane key under it, any colour means that colour's
+ * key on the row below.
+ */
+export const PLAIN_NOTE_HEX = '#ffffff';
 
+/**
+ * Difficulty colours come in two weights. `hex` is dark enough to carry white
+ * text as a solid badge on the light pages; `glow` is the same hue lifted for
+ * the black playfield, where the dark version would disappear.
+ */
 export const DIFFICULTIES = [
-  { id: 'easy', label: 'EASY', hex: '#67d443' },
-  { id: 'normal', label: 'NORMAL', hex: '#38b6f0' },
-  { id: 'hard', label: 'HARD', hex: '#ffa629' },
-  { id: 'expert', label: 'EXPERT', hex: '#f4525f' },
-  { id: 'master', label: 'MASTER', hex: '#b45cf0' },
+  { id: 'easy', label: 'EASY', hex: '#2e7d32', glow: '#6cc46f' },
+  { id: 'normal', label: 'NORMAL', hex: '#1565c0', glow: '#6aa9e8' },
+  { id: 'hard', label: 'HARD', hex: '#a86200', glow: '#e0a13c' },
+  { id: 'expert', label: 'EXPERT', hex: '#c62828', glow: '#f0736f' },
+  { id: 'master', label: 'MASTER', hex: '#6a1b9a', glow: '#b47ee0' },
+  { id: 'custom', label: 'CUSTOM', hex: '#37474f', glow: '#93a4ad' },
 ];
 
 export const difficultyMeta = (id) =>
   DIFFICULTIES.find((d) => d.id === id) || DIFFICULTIES[1];
 
+/** Judgement text sits on the dark playfield, so these stay bright. */
 export const JUDGE_HEX = {
   PERFECT: '#ffd75e',
   GREAT: '#5fe0c4',
-  GOOD: '#6fb7ff',
-  MISS: '#ff7d95',
+  GOOD: '#7fbcff',
+  MISS: '#ff8095',
 };
 
+/** Grades are shown on the light results page, so these stay dark. */
 export const GRADE_HEX = {
-  SSS: '#ffd75e', SS: '#ffe9a8', S: '#5fe0c4', A: '#67d443',
-  B: '#38b6f0', C: '#b45cf0', D: '#ff7d95',
+  SSS: '#16171a', SS: '#16171a', S: '#16171a', A: '#2e7d32',
+  B: '#1565c0', C: '#a86200', D: '#c62828',
 };
 
 /**
