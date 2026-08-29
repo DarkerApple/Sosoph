@@ -1,12 +1,13 @@
 // Pooled particle system. Allocation-free during play so the GC never
 // introduces a hitch mid-song.
 //
-// `tint` indexes the note colour table: 0 is a plain note, 1..4 the colours,
-// and -1 is the neutral grey used for misses.
+// Particles carry the colour of whatever spawned them, as an [r,g,b] array
+// borrowed from the note colour table — no copy, so nothing is allocated.
 
 import { clamp, easeOutCubic, easeOutQuint } from './util.js';
 
 const MAX = 900;
+const MISS_GREY = [150, 160, 190];
 
 export class Particles {
   constructor() {
@@ -14,7 +15,7 @@ export class Particles {
     for (let i = 0; i < MAX; i++) {
       this.pool[i] = {
         active: false, kind: 'spark', x: 0, y: 0, vx: 0, vy: 0,
-        life: 0, maxLife: 1, size: 1, tint: 0, drag: 2.5,
+        life: 0, maxLife: 1, size: 1, col: null, drag: 2.5,
         gravity: 0, rot: 0, spin: 0, alpha: 1,
       };
     }
@@ -45,7 +46,7 @@ export class Particles {
   }
 
   /** Burst of sparks when a note is struck. */
-  burst(x, y, tint, strength = 1, quality = 1) {
+  burst(x, y, col, strength = 1, quality = 1) {
     const count = Math.round(clamp(5 + 8 * strength, 3, 13) * quality);
     for (let i = 0; i < count; i++) {
       const p = this._take();
@@ -58,7 +59,7 @@ export class Particles {
       p.vy = Math.sin(ang) * speed;
       p.maxLife = p.life = 0.24 + Math.random() * 0.3;
       p.size = 1.1 + Math.random() * 2.2;
-      p.tint = tint;
+      p.col = col;
       p.drag = 2.2;
       p.gravity = 340;
       p.alpha = 1;
@@ -66,7 +67,7 @@ export class Particles {
   }
 
   /** Expanding ring that reads as the impact shockwave. */
-  ring(x, y, tint, size = 60, strength = 1) {
+  ring(x, y, col, size = 60, strength = 1) {
     const p = this._take();
     p.kind = 'ring';
     p.x = x;
@@ -75,24 +76,24 @@ export class Particles {
     p.vy = 0;
     p.maxLife = p.life = 0.3;
     p.size = size * strength * 0.5;
-    p.tint = tint;
+    p.col = col;
     p.alpha = 0.6 * strength;
   }
 
   /** Soft light bloom at the receptor. */
-  bloom(x, y, tint, size = 70) {
+  bloom(x, y, col, size = 70) {
     const p = this._take();
     p.kind = 'bloom';
     p.x = x;
     p.y = y;
     p.maxLife = p.life = 0.22;
     p.size = size * 0.5;
-    p.tint = tint;
+    p.col = col;
     p.alpha = 0.45;
   }
 
   /** Debris shed by a held note while it is being sustained. */
-  holdSpark(x, y, tint) {
+  holdSpark(x, y, col) {
     const p = this._take();
     p.kind = 'spark';
     p.x = x + (Math.random() - 0.5) * 30;
@@ -101,7 +102,7 @@ export class Particles {
     p.vy = -110 - Math.random() * 160;
     p.maxLife = p.life = 0.24 + Math.random() * 0.2;
     p.size = 1.2 + Math.random() * 2;
-    p.tint = tint;
+    p.col = col;
     p.drag = 3;
     p.gravity = 120;
     p.alpha = 0.8;
@@ -118,7 +119,7 @@ export class Particles {
       p.vy = 40 + Math.random() * 130;
       p.maxLife = p.life = 0.5 + Math.random() * 0.3;
       p.size = 1.5 + Math.random() * 2.5;
-      p.tint = -1;
+      p.col = MISS_GREY;
       p.drag = 1.4;
       p.gravity = 280;
       p.alpha = 0.55;
@@ -144,13 +145,13 @@ export class Particles {
     }
   }
 
-  draw(ctx, colors) {
+  draw(ctx) {
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     for (const p of this.pool) {
       if (!p.active) continue;
       const t = 1 - p.life / p.maxLife;
-      const col = p.tint >= 0 ? colors[p.tint] : [150, 160, 190];
+      const col = p.col || MISS_GREY;
 
       if (p.kind === 'spark') {
         const a = (1 - t) * (1 - t) * p.alpha;

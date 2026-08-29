@@ -19,7 +19,7 @@ export function putChart(songId, notes) {
       t: +n.t.toFixed(4),
       lane: n.lane,
       dur: +(n.dur || 0).toFixed(4),
-      color: n.color || 0,
+      flick: n.flick || 0,
     })),
     updated: Date.now(),
   };

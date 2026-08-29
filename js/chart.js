@@ -7,14 +7,14 @@
 // less detail rather than four unrelated ones.
 
 import { clamp, mulberry32 } from './util.js';
-import { LANE_COUNT, colorOfLane, homeLaneOf, PLAIN } from './theme.js';
+import {
+  LANE_COUNT, FLICK, FLICK_WINDOW, FLICK_CLEARANCE, flickChannel, flicksFor,
+} from './theme.js';
 
 /**
  * Per-difficulty tuning.
  *
- *   colorRate     share of phrases moved to the colour keys, not share of notes
- *   rowSwitchSec  how long a finger needs to change rows; this also decides
- *                 where one colour run ends and the next begins
+ *   flickRate     share of eligible notes turned into flicks
  *   layers        minimum weight a hit needs to survive, per source layer;
  *                 a layer that is absent is dropped entirely
  *   grid          smallest spacing between consecutive notes, in beats
@@ -28,41 +28,38 @@ export const PROFILES = {
   easy: {
     layers: { lead: 0.72, snare: 0.7, kick: 0.85, stab: 0.7 },
     grid: 1, floorSec: 0.34, maxChord: 1, holds: true,
-    // Quarter notes leave plenty of room, so even EASY can move whole phrases
-    // to the bottom row without ever asking for a fast row change.
-    colorRate: 0.3, rowSwitchSec: 0.3, holdMinBeats: 1.5,
+    flickRate: 0.08, holdMinBeats: 1.5,
   },
   normal: {
     layers: { lead: 0.45, snare: 0.5, kick: 0.7, stab: 0.5, arp: 0.85 },
     grid: 0.5, floorSec: 0.24, maxChord: 2, holds: true,
-    colorRate: 0.4, rowSwitchSec: 0.24, holdMinBeats: 1,
+    flickRate: 0.11, holdMinBeats: 1,
   },
   hard: {
     layers: { lead: 0.2, snare: 0.35, kick: 0.5, stab: 0.3, arp: 0.6, bass: 0.6 },
     grid: 0.25, floorSec: 0.155, maxChord: 2, holds: true,
-    colorRate: 0.45, rowSwitchSec: 0.17, holdMinBeats: 1,
+    flickRate: 0.15, holdMinBeats: 1,
   },
   expert: {
     layers: { lead: 0, snare: 0.2, kick: 0.35, stab: 0.15, arp: 0.35, bass: 0.5 },
     grid: 0.25, floorSec: 0.105, maxChord: 2, holds: true,
-    colorRate: 0.48, rowSwitchSec: 0.14, holdMinBeats: 0.75,
+    flickRate: 0.18, holdMinBeats: 0.75,
   },
   master: {
     layers: { lead: 0, snare: 0, kick: 0.2, stab: 0, arp: 0.2, bass: 0.35 },
     grid: 0.25, floorSec: 0.068, maxChord: 2, holds: true,
-    colorRate: 0.52, rowSwitchSec: 0.12, holdMinBeats: 0.75,
+    flickRate: 0.22, holdMinBeats: 0.75,
   },
 };
 
 const EPS = 1e-4;
 
-/**
- * Which physical finger a note needs, and which row it sits on. The lane keys
- * and the colour keys are two rows under the same four fingers, so lane 0 (D)
- * and red (C) are both the left middle finger.
- */
-export const fingerOf = (note) => (note.color === PLAIN ? note.lane : homeLaneOf(note.color));
-export const rowOf = (note) => (note.color === PLAIN ? 0 : 1);
+/** The channel a note's opening press uses — always its own lane key. */
+export const channelOf = (note) => note.lane;
+
+/** The channel that finishes a flick, or -1 for a tap or hold. */
+export const finishChannelOf = (note) =>
+  note.flick ? flickChannel(note.lane, note.flick) : -1;
 
 /** Group hits that land on the same beat. */
 function groupByBeat(hits) {
@@ -168,8 +165,9 @@ function generate(def, profile, spb, groups, survives, picker, rnd) {
 
     for (const { hit, lane } of chord) {
       const holdBeats = profile.holds && hit.hold >= profile.holdMinBeats ? hit.hold : 0;
-      // Colour is painted afterwards, over whole phrases — see `paintColors`.
-      notes.push({ t, lane, dur: holdBeats * spb, color: PLAIN, accent: hit.accent });
+      // Flicks are painted afterwards, against the finished map — see
+      // `paintFlicks` — because whether a roll is playable depends on it.
+      notes.push({ t, lane, dur: holdBeats * spb, flick: FLICK.NONE, accent: hit.accent });
       accepted.push(hit);
     }
 
@@ -183,51 +181,98 @@ function generate(def, profile, spb, groups, survives, picker, rnd) {
 }
 
 /**
- * Paint colours onto a finished note map.
+ * Turn some of a finished note map into flicks.
  *
- * Colour is a hand position, not a decoration. A finger cannot flick between
- * the two key rows note to note, so colouring individual notes forces them to
- * stay rare — which is what made the mechanic feel like a garnish. Instead the
- * lane's notes are cut into *runs* at exactly the gaps long enough to change
- * rows in, and a whole run is moved to the colour key or left on the lane key.
- * The player's hand drops to the bottom row for a phrase and comes back up,
- * which is both far more playable at speed and far more of a mechanic.
+ * A flick is only playable if the key it rolls *onto* is free for the length of
+ * the roll — otherwise the roll and the next note fight over the same finger,
+ * and the player cannot do both. So flicks are placed last, against the
+ * finished map, where that is knowable.
+ *
+ * They are also placed in figures rather than at random. A lone flick is a
+ * full stop at the end of a phrase; a pair alternates direction; a sweep walks
+ * one direction across the lanes. Those read at a glance and are the reason
+ * flicks feel like something you play rather than something you survive.
  */
-function paintColors(notes, profile, rnd) {
-  if (profile.colorRate <= 0) return 0;
+function paintFlicks(notes, profile, rnd) {
+  if (profile.flickRate <= 0) return 0;
 
-  const byLane = Array.from({ length: LANE_COUNT }, () => []);
-  for (const n of notes) byLane[n.lane].push(n);
+  // When each channel is next busy, so a roll never lands on an occupied key.
+  const busy = new Map();
+  const claim = (ch, from, to) => {
+    if (!busy.has(ch)) busy.set(ch, []);
+    busy.get(ch).push([from, to]);
+  };
+  const free = (ch, from, to) =>
+    !(busy.get(ch) || []).some(([a, b]) => from < b - EPS && to > a + EPS);
 
-  let colored = 0;
-  for (const lane of byLane) {
-    // A gap the finger could use to change rows both ends one run and starts
-    // the next, so every run is enterable and leavable by construction.
-    const runs = [];
-    for (const n of lane) {
-      const run = runs[runs.length - 1];
-      const prev = run && run[run.length - 1];
-      if (!run || n.t - (prev.t + prev.dur) >= profile.rowSwitchSec - EPS) runs.push([n]);
-      else run.push(n);
-    }
+  for (const n of notes) claim(n.lane, n.t, n.t + n.dur);
 
-    let prevColored = false;
-    for (const run of runs) {
-      // Runs the music already stresses are likelier to move; a run right after
-      // a coloured one is likelier to stay, so the hand actually alternates
-      // rather than sitting on the bottom row for a whole section.
-      const bias = (run[0].accent ? 1.3 : 0.8) * (prevColored ? 0.45 : 1.15);
-      const take = rnd() < profile.colorRate * bias;
-      if (take) {
-        for (const n of run) {
-          n.color = colorOfLane(n.lane);
-          colored++;
-        }
+  /**
+   * Can this note roll `dir` without colliding with anything? The destination
+   * must be free for the roll itself *and* for a moment beforehand, so the
+   * other hand has finished with that key before the roll lands on it.
+   */
+  const canFlick = (n, dir) => {
+    const ch = flickChannel(n.lane, dir);
+    if (ch < 0) return false;
+    return free(ch, n.t - FLICK_CLEARANCE, n.t + FLICK_WINDOW);
+  };
+
+  const setFlick = (n, dir) => {
+    n.flick = dir;
+    claim(flickChannel(n.lane, dir), n.t - FLICK_CLEARANCE, n.t + FLICK_WINDOW);
+  };
+
+  // Flicks land on notes the music stresses, and never on a hold: a hold's
+  // finger is already committed for its whole length.
+  const eligible = notes.filter((n) => !n.isHold && n.dur === 0);
+  let placed = 0;
+
+  for (let i = 0; i < eligible.length; i++) {
+    const n = eligible[i];
+    if (n.flick) continue;
+    const weight = n.accent ? 1.5 : 0.7;
+    if (rnd() >= profile.flickRate * weight) continue;
+
+    // Sideways rolls read better than downward ones, so prefer them when the
+    // neighbouring key is free; down is the fallback that always exists.
+    const dirs = flicksFor(n.lane).filter((d) => canFlick(n, d));
+    if (!dirs.length) continue;
+    const sideways = dirs.filter((d) => d !== FLICK.DOWN);
+    const pool = sideways.length && rnd() < 0.7 ? sideways : dirs;
+    const dir = pool[Math.floor(rnd() * pool.length)];
+    setFlick(n, dir);
+    placed++;
+
+    // --- figures ------------------------------------------------------------
+    // Having committed to one flick, try to make it part of a shape. Both
+    // figures only extend onto notes that are close enough to read as one
+    // gesture, so they never turn into a scattering of arrows.
+    const near = (a, b) => b && b.t - a.t > EPS && b.t - a.t < 1.2;
+    if (rnd() < 0.55) {
+      // A pair that answers itself: roll out, then roll back.
+      const back = dir === FLICK.LEFT ? FLICK.RIGHT : dir === FLICK.RIGHT ? FLICK.LEFT : FLICK.DOWN;
+      const next = eligible[i + 1];
+      if (near(n, next) && !next.flick && canFlick(next, back)) {
+        setFlick(next, back);
+        placed++;
+        i += 1;
       }
-      prevColored = take;
+    } else if (dir !== FLICK.DOWN) {
+      // A sweep: the same direction, stepping across the lanes.
+      let prev = n;
+      for (let k = i + 1; k < eligible.length && k <= i + 3; k++) {
+        const next = eligible[k];
+        if (!near(prev, next) || next.flick || !canFlick(next, dir)) break;
+        if (Math.abs(next.lane - prev.lane) !== 1) break;
+        setFlick(next, dir);
+        placed++;
+        prev = next;
+        i = k;
+      }
     }
   }
-  return colored;
+  return placed;
 }
 
 /**
@@ -262,9 +307,9 @@ export function buildChart(def, difficulty, overrides = {}) {
 
   const first = run(laneMap(def.hits.filter(survives)));
   const second = run(laneMap(first.accepted));
-  paintColors(second.notes, profile, mulberry32(seed ^ 0x9e3779b9));
-
-  return finalise(second.notes, def, difficulty, spb);
+  const chart = finalise(second.notes, def, difficulty, spb);
+  chart.flicks = paintFlicks(chart.notes, profile, mulberry32(seed ^ 0x9e3779b9));
+  return chart;
 }
 
 /**
@@ -307,7 +352,7 @@ export function finalise(raw, def, difficulty, spb) {
     difficulty,
     notes: cleaned,
     units,
-    colored: cleaned.filter((n) => n.color !== PLAIN).length,
+    flicks: cleaned.filter((n) => n.flick).length,
   };
 }
 
@@ -352,11 +397,8 @@ function hashSeed(str) {
 
 /**
  * Rough difficulty number, so song cards do not need hand-maintained levels.
- *
- * Density is most of it, but the third term matters as much in practice: what
- * makes a colour-heavy chart hard is not how many notes are coloured — that is
- * roughly constant across the library — but how often a hand has to change
- * rows, so that is what is counted.
+ * Density is most of it; flicks are the rest, since a flick costs a whole
+ * gesture rather than a keypress.
  */
 export function ratingFor(chart, duration) {
   if (!chart.notes.length) return 1;
@@ -367,15 +409,6 @@ export function ratingFor(chart, duration) {
     while (i + c < chart.notes.length && chart.notes[i + c].t - chart.notes[i].t < 1) c++;
     if (c > peak) peak = c;
   }
-  let switches = 0;
-  const row = new Array(LANE_COUNT).fill(0);
-  for (const n of chart.notes) {
-    const f = fingerOf(n);
-    if (row[f] !== rowOf(n)) {
-      switches++;
-      row[f] = rowOf(n);
-    }
-  }
-  const sps = switches / Math.max(1, duration);
-  return clamp(Math.round(nps * 2.6 + peak * 0.55 + sps * 2), 1, 45);
+  const fps = chart.notes.filter((n) => n.flick).length / Math.max(1, duration);
+  return clamp(Math.round(nps * 2.6 + peak * 0.55 + fps * 6), 1, 45);
 }

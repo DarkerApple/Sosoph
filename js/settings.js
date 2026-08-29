@@ -2,7 +2,7 @@
 // and the editor.
 
 import { load, save } from './storage.js';
-import { LANE_KEYS, NOTE_COLORS } from './theme.js';
+import { LANE_KEYS, DOWN_KEYS } from './theme.js';
 
 const KEY = 'settings.v2';
 
@@ -15,13 +15,17 @@ export const DEFAULTS = {
   hitSound: 0.45,
   /** Particle and bloom density, 0 turns effects off entirely. */
   effects: 1,
-  /** When off, coloured notes are played as ordinary lane notes. */
-  colorNotes: true,
+  /** When off, flicks are played as ordinary taps. */
+  flickNotes: true,
   autoplay: false,
-  /** Custom key bindings, keyed `lane0`..`lane3` and `color-red`.. */
+  /** Frame-time and timing readout, toggled with F3. */
+  monitor: false,
+  /** Custom key bindings, keyed `lane0`..`lane3` and `down0`..`down3`. */
   keys: {},
-  /** Custom note colours, keyed by colour id. */
-  colorHex: {},
+  /** Note appearance: shape, size multiplier and per-kind colours. */
+  noteStyle: 'bar',
+  noteScale: 1,
+  noteHex: {},
 };
 
 export const settings = load(KEY, DEFAULTS);
@@ -35,5 +39,5 @@ export const travelTime = () => 1.75 / settings.speed;
 /** Labels for the eight input channels, in `keyTable` order. */
 export const CHANNEL_NAMES = [
   ...LANE_KEYS.map((_, i) => ({ id: `lane${i}`, label: `Lane ${i + 1}` })),
-  ...NOTE_COLORS.map((c) => ({ id: `color-${c.id}`, label: c.label })),
+  ...DOWN_KEYS.map((_, i) => ({ id: `down${i}`, label: `Flick ${i + 1}` })),
 ];

@@ -12,6 +12,7 @@
 <body>
 
 <canvas id="stage" aria-hidden="true"></canvas>
+<aside id="monitor" hidden aria-live="off"></aside>
 
 <div id="shell">
   <header class="topbar">
@@ -68,7 +69,7 @@
               <div><dt>BPM</dt><dd id="d-bpm">—</dd></div>
               <div><dt>Length</dt><dd id="d-length">—</dd></div>
               <div><dt>Notes</dt><dd id="d-notes">—</dd></div>
-              <div><dt>Coloured</dt><dd id="d-colored">—</dd></div>
+              <div><dt>Flicks</dt><dd id="d-flicks">—</dd></div>
             </dl>
 
             <div class="best-row"><span>Best score</span><b id="d-best">Not played yet</b></div>
@@ -106,15 +107,21 @@
             <output id="out-offset"></output>
           </label>
 
-          <label class="row toggle" for="set-colors">
-            <span class="row-name">Coloured notes<em>Off plays every note on the lane keys</em></span>
-            <input type="checkbox" id="set-colors" />
+          <label class="row toggle" for="set-flicks">
+            <span class="row-name">Flick notes<em>Off plays every flick as an ordinary tap</em></span>
+            <input type="checkbox" id="set-flicks" />
             <i class="switch" aria-hidden="true"></i>
           </label>
 
           <label class="row toggle" for="set-auto">
             <span class="row-name">Autoplay<em>Watch a perfect run. Scores are not recorded</em></span>
             <input type="checkbox" id="set-auto" />
+            <i class="switch" aria-hidden="true"></i>
+          </label>
+
+          <label class="row toggle" for="set-monitor">
+            <span class="row-name">Monitor<em>Frame times, clock drift and your hit offset. <kbd>F3</kbd> toggles it mid-song</em></span>
+            <input type="checkbox" id="set-monitor" />
             <i class="switch" aria-hidden="true"></i>
           </label>
         </section>
@@ -146,16 +153,34 @@
             <h2 class="label">Keys</h2>
             <button class="btn small" id="btn-reset-keys" type="button">Reset</button>
           </div>
-          <p class="panel-note">Click a key, then press the one you want.</p>
+          <p class="panel-note">Click a key, then press the one you want. The second row is what a downward flick rolls onto.</p>
           <div class="bind-grid" id="keygrid"></div>
         </section>
 
         <section class="panel">
           <div class="panel-head">
-            <h2 class="label">Note colours</h2>
-            <button class="btn small" id="btn-reset-colors" type="button">Reset</button>
+            <h2 class="label">Notes</h2>
+            <button class="btn small" id="btn-reset-notes" type="button">Reset</button>
           </div>
-          <div class="bind-grid" id="colorgrid"></div>
+
+          <div class="note-preview" id="note-preview"></div>
+
+          <label class="row" for="set-style">
+            <span class="row-name">Shape</span>
+            <select id="set-style" class="inline-select"></select>
+            <output></output>
+          </label>
+
+          <label class="row" for="set-scale">
+            <span class="row-name">Size</span>
+            <input type="range" id="set-scale" min="0.5" max="1.6" step="0.05" />
+            <output id="out-scale"></output>
+          </label>
+
+          <div class="row colors-row">
+            <span class="row-name">Colours<em>Tap, hold and flick</em></span>
+            <div class="bind-grid three" id="notecolors"></div>
+          </div>
         </section>
       </div>
     </section>

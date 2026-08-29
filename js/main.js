@@ -8,12 +8,13 @@ import { AudioEngine } from './audio.js';
 import { Renderer } from './renderer.js';
 import { InputManager } from './input.js';
 import { Game } from './game.js';
+import { Monitor } from './monitor.js';
 import { catalogue, loadSong, playable } from './songs/index.js';
 import { getChart } from './charts.js';
 import { settings, commit, CHANNEL_NAMES } from './settings.js';
 import {
-  NOTE_COLORS, PLAIN_NOTE_HEX, LANE_COUNT, difficultyMeta, keyTable, keyLabel,
-  GRADE_HEX, UI,
+  NOTE_KINDS, NOTE_LOOK, NOTE_STYLES, LANE_COUNT, FLICK, difficultyMeta,
+  keyTable, keyLabel, GRADE_HEX, UI,
 } from './theme.js';
 import {
   DEFAULT_VIEW, SORTS, STATUSES, buildList, genresOf, difficultyOptions,
@@ -31,6 +32,8 @@ const audio = new AudioEngine();
 const input = new InputManager(settings);
 input.attach(canvas);
 input.layout = renderer.layout;
+
+const monitor = new Monitor($('monitor'));
 
 let song = null;
 const game = new Game({
@@ -96,6 +99,7 @@ function applySettings() {
   audio.userOffset = settings.offsetMs / 1000;
   input.rebind();
   renderer.refreshColors();
+  monitor.setEnabled(settings.monitor);
 }
 
 // ------------------------------------------------------------ song select --
@@ -117,7 +121,7 @@ function difficultiesOf(entry) {
       id: 'custom',
       level: custom.notes.length ? '★' : 0,
       notes: custom.notes.length,
-      colored: custom.notes.filter((n) => n.color).length,
+      flicks: custom.notes.filter((n) => n.flick).length,
       custom: true,
     });
   }
@@ -212,7 +216,7 @@ function renderDetail() {
   $('d-bpm').textContent = s.bpm;
   $('d-length').textContent = fmtTime(s.duration);
   $('d-notes').textContent = d.notes;
-  $('d-colored').textContent = d.colored;
+  $('d-flicks').textContent = d.flicks;
 
   const rec = best[bestKey(s.id, d.id)];
   $('d-best').textContent = rec
@@ -341,7 +345,11 @@ const CONTROLS = [
   ['set-effects', 'out-effects', 'effects', (v) => `${Math.round(v * 100)}%`, parseFloat],
 ];
 
-const TOGGLES = [['set-colors', 'colorNotes'], ['set-auto', 'autoplay']];
+const TOGGLES = [
+  ['set-flicks', 'flickNotes'],
+  ['set-auto', 'autoplay'],
+  ['set-monitor', 'monitor'],
+];
 
 /** The key binding currently waiting for a keypress, if any. */
 let listening = null;
@@ -369,21 +377,18 @@ function renderKeyGrid() {
 
 /**
  * The controls legend. Generated rather than written into the markup so it
- * always shows the live key bindings and note colours.
+ * always shows the live key bindings, colours and note shape.
  */
 function renderLegend() {
   const list = $('legend');
   const codes = keyTable(settings).map(keyLabel);
   list.replaceChildren();
 
-  const row = (hex, keys, name, rim) => {
+  const row = (kind, keys, name) => {
     const li = document.createElement('li');
     const sw = document.createElement('span');
     sw.className = 'swatch';
-    const bar = document.createElement('i');
-    bar.style.setProperty('--c', hex);
-    if (rim) bar.style.setProperty('--rim', '0 0 0 1.5px #fff');
-    sw.append(bar);
+    sw.append(noteSwatch(kind, 40, 20));
     const kb = document.createElement('span');
     kb.className = 'keys';
     for (const k of keys) {
@@ -398,32 +403,89 @@ function renderLegend() {
     list.append(li);
   };
 
-  row(PLAIN_NOTE_HEX, codes.slice(0, LANE_COUNT), 'Lane notes', false);
-  NOTE_COLORS.forEach((c, i) => {
-    row(settings.colorHex[c.id] || c.hex, [codes[LANE_COUNT + i]], c.label, true);
-  });
+  row('tap', codes.slice(0, LANE_COUNT), 'Tap — press the lane key');
+  row('hold', codes.slice(0, LANE_COUNT), 'Hold — keep it down');
+  row('flick', codes.slice(0, LANE_COUNT), 'Flick — press, then roll the way the arrow points');
+  row('down', codes.slice(LANE_COUNT), 'A down-flick rolls onto this row');
 }
 
-function renderColorGrid() {
-  const grid = $('colorgrid');
+/**
+ * Draw one note as it will appear in play, on a scrap of the black field.
+ * Shared by the controls legend and the settings preview, so what you see in
+ * either is literally the sprite the game draws.
+ */
+function noteSwatch(kind, w, h) {
+  const canvas = document.createElement('canvas');
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  canvas.width = w * dpr;
+  canvas.height = h * dpr;
+  canvas.style.width = `${w}px`;
+  canvas.style.height = `${h}px`;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+  ctx.fillStyle = '#050506';
+  ctx.fillRect(0, 0, w, h);
+
+  const note =
+    kind === 'hold' ? { lane: 0, play: FLICK.NONE, isHold: true }
+    : kind === 'flick' ? { lane: 0, play: FLICK.RIGHT, isHold: false }
+    : kind === 'down' ? { lane: 0, play: FLICK.DOWN, isHold: false }
+    : { lane: 0, play: FLICK.NONE, isHold: false };
+
+  const sprite = renderer.spriteFor(note);
+  if (sprite) {
+    const scale = Math.min(1, (w - 4) / sprite.w);
+    ctx.drawImage(
+      sprite.canvas,
+      (w - sprite.w * scale) / 2,
+      (h - sprite.h * scale) / 2,
+      sprite.w * scale,
+      sprite.h * scale
+    );
+  }
+  return canvas;
+}
+
+/** Live preview of the three note kinds in the settings panel. */
+function renderNotePreview() {
+  const wrap = $('note-preview');
+  wrap.replaceChildren();
+  for (const kind of NOTE_KINDS) {
+    const fig = document.createElement('figure');
+    fig.append(noteSwatch(kind.id, 92, 34));
+    const cap = document.createElement('figcaption');
+    cap.textContent = kind.label;
+    fig.append(cap);
+    wrap.append(fig);
+  }
+}
+
+function renderNoteColors() {
+  const grid = $('notecolors');
   grid.replaceChildren();
-  for (const c of NOTE_COLORS) {
+  for (const kind of NOTE_KINDS) {
     const wrap = document.createElement('label');
     wrap.className = 'bind';
     const small = document.createElement('small');
-    small.textContent = c.label;
+    small.textContent = kind.label;
     const inp = document.createElement('input');
     inp.type = 'color';
-    inp.value = settings.colorHex[c.id] || c.hex;
+    inp.value = settings.noteHex[kind.id] || NOTE_LOOK[kind.id];
     inp.addEventListener('input', () => {
-      settings.colorHex[c.id] = inp.value;
+      settings.noteHex[kind.id] = inp.value;
       commit();
-      renderer.refreshColors();
-      renderLegend();
+      refreshNoteLook();
     });
     wrap.append(small, inp);
     grid.append(wrap);
   }
+}
+
+/** Rebuild everything that draws a note after an appearance change. */
+function refreshNoteLook() {
+  renderer.refreshColors();
+  renderNotePreview();
+  renderLegend();
 }
 
 function initSettings() {
@@ -446,6 +508,7 @@ function initSettings() {
     el.addEventListener('change', () => {
       settings[key] = el.checked;
       commit();
+      if (key === 'monitor') monitor.setEnabled(el.checked);
       blip('move');
     });
   }
@@ -458,16 +521,46 @@ function initSettings() {
     renderLegend();
   });
 
-  $('btn-reset-colors').addEventListener('click', () => {
-    settings.colorHex = {};
+  const style = $('set-style');
+  for (const st of NOTE_STYLES) {
+    const o = document.createElement('option');
+    o.value = st.id;
+    o.textContent = st.label;
+    style.append(o);
+  }
+  style.value = settings.noteStyle;
+  style.addEventListener('change', () => {
+    settings.noteStyle = style.value;
     commit();
-    renderer.refreshColors();
-    renderColorGrid();
-    renderLegend();
+    refreshNoteLook();
+  });
+
+  const scale = $('set-scale');
+  const scaleOut = $('out-scale');
+  scale.value = settings.noteScale;
+  scaleOut.textContent = `${settings.noteScale.toFixed(2)}×`;
+  scale.addEventListener('input', () => {
+    settings.noteScale = parseFloat(scale.value);
+    scaleOut.textContent = `${settings.noteScale.toFixed(2)}×`;
+    commit();
+    refreshNoteLook();
+  });
+
+  $('btn-reset-notes').addEventListener('click', () => {
+    settings.noteHex = {};
+    settings.noteStyle = 'bar';
+    settings.noteScale = 1;
+    commit();
+    style.value = settings.noteStyle;
+    scale.value = settings.noteScale;
+    scaleOut.textContent = '1.00×';
+    renderNoteColors();
+    refreshNoteLook();
   });
 
   renderKeyGrid();
-  renderColorGrid();
+  renderNoteColors();
+  renderNotePreview();
 }
 
 /** Capture the next keypress for the binding being edited. */
@@ -562,6 +655,16 @@ async function requestPause() {
 
 input.onPause = requestPause;
 
+// F3 toggles the monitor anywhere, including mid-song.
+window.addEventListener('keydown', (ev) => {
+  if (ev.code !== 'F3') return;
+  ev.preventDefault();
+  settings.monitor = monitor.toggle();
+  commit();
+  const box = $('set-monitor');
+  if (box) box.checked = settings.monitor;
+});
+
 // Song-list keyboard navigation, and Escape to leave settings.
 window.addEventListener('keydown', (ev) => {
   if (page === 'page-settings') {
@@ -639,14 +742,17 @@ function showResults(res) {
 let last = performance.now();
 
 function frame(now) {
-  const dt = clamp((now - last) / 1000, 0, 0.1);
+  const dtMs = now - last;
+  const dt = clamp(dtMs / 1000, 0, 0.1);
   last = now;
+  monitor.frame(dtMs);
   // Nothing is drawn between songs: the menus are plain pages and the canvas
   // is hidden, so the loop idles rather than painting a background nobody sees.
   if (game.started) {
     game.update(dt);
     renderer.draw(game, dt);
   }
+  monitor.update(now, { game, audio, renderer });
   requestAnimationFrame(frame);
 }
 

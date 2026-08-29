@@ -9,6 +9,10 @@ import { clamp, mtof } from './util.js';
 const SCHEDULE_AHEAD = 0.3; // seconds of audio queued in advance
 const TICK_MS = 25; // scheduler wakeup interval
 
+/** Nothing starts or stops faster than this, so no note clicks. */
+const MIN_ATTACK = 0.004;
+const MIN_RELEASE = 0.07;
+
 export class AudioEngine {
   constructor() {
     this.ctx = null;
@@ -45,31 +49,60 @@ export class AudioEngine {
     this.master = ctx.createGain();
     this.master.gain.value = this.masterVolume;
 
-    // Gentle glue compression keeps the mix from clipping when the drums,
-    // bass and lead all land on the same downbeat.
+    // Everything is synthesised from raw saw and square waves, which are far
+    // brighter than any real instrument. Two shelves take the glare off before
+    // anything else in the chain sees it.
+    this.air = ctx.createBiquadFilter();
+    this.air.type = 'highshelf';
+    this.air.frequency.value = 5200;
+    this.air.gain.value = -7;
+
+    this.tilt = ctx.createBiquadFilter();
+    this.tilt.type = 'lowpass';
+    this.tilt.frequency.value = 13000;
+    this.tilt.Q.value = 0.5;
+
+    // Gentle glue compression keeps the mix from clipping when the drums, bass
+    // and lead all land on the same downbeat. A slower attack and a wide knee
+    // let transients through instead of chopping their heads off.
     this.comp = ctx.createDynamicsCompressor();
-    this.comp.threshold.value = -12;
-    this.comp.knee.value = 24;
-    this.comp.ratio.value = 3;
-    this.comp.attack.value = 0.004;
-    this.comp.release.value = 0.18;
+    this.comp.threshold.value = -16;
+    this.comp.knee.value = 30;
+    this.comp.ratio.value = 2.4;
+    this.comp.attack.value = 0.012;
+    this.comp.release.value = 0.25;
+
+    // A soft-clip curve after the compressor rounds peaks off rather than
+    // letting the output stage square them.
+    this.shaper = ctx.createWaveShaper();
+    this.shaper.curve = this._softClip();
+    this.shaper.oversample = '2x';
 
     this.analyser = ctx.createAnalyser();
     this.analyser.fftSize = 256;
     this.analyser.smoothingTimeConstant = 0.75;
     this.freqData = new Uint8Array(this.analyser.frequencyBinCount);
 
-    this.master.connect(this.comp);
-    this.comp.connect(this.analyser);
+    this.master.connect(this.air);
+    this.air.connect(this.tilt);
+    this.tilt.connect(this.comp);
+    this.comp.connect(this.shaper);
+    this.shaper.connect(this.analyser);
     this.analyser.connect(ctx.destination);
 
     // Reverb bus.
     this.reverb = ctx.createConvolver();
-    this.reverb.buffer = this._impulse(2.2, 2.6);
+    this.reverb.buffer = this._impulse(2.6, 2.2);
     this.reverbGain = ctx.createGain();
-    this.reverbGain.gain.value = 0.9;
+    this.reverbGain.gain.value = 1.1;
+    // A darkened tail sits behind the dry signal instead of hissing over it,
+    // and is most of why nothing sounds like it stops dead.
+    this.reverbTone = ctx.createBiquadFilter();
+    this.reverbTone.type = 'lowpass';
+    this.reverbTone.frequency.value = 3400;
     this.reverbGain.connect(this.reverb);
-    this.reverb.connect(this.master);
+    this.reverb.connect(this.reverbTone);
+    this.reverbTone.connect(this.master);
 
     // Dotted-eighth delay bus, low-passed so repeats sit behind the dry signal.
     this.delay = ctx.createDelay(1.5);
@@ -77,7 +110,7 @@ export class AudioEngine {
     this.delayFb.gain.value = 0.34;
     this.delayTone = ctx.createBiquadFilter();
     this.delayTone.type = 'lowpass';
-    this.delayTone.frequency.value = 2600;
+    this.delayTone.frequency.value = 2100;
     this.delaySend = ctx.createGain();
     this.delaySend.gain.value = 0.75;
     this.delaySend.connect(this.delay);
@@ -87,6 +120,17 @@ export class AudioEngine {
     this.delayTone.connect(this.master);
 
     this.noiseBuffer = this._noise(2.0);
+  }
+
+  /** Soft-clip transfer curve: linear in the middle, rounded at the extremes. */
+  _softClip() {
+    const n = 1024;
+    const curve = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      const x = (i / (n - 1)) * 2 - 1;
+      curve[i] = Math.tanh(x * 1.35) / Math.tanh(1.35);
+    }
+    return curve;
   }
 
   _noise(seconds) {
@@ -117,16 +161,24 @@ export class AudioEngine {
 
   // -------------------------------------------------------------- voices ---
 
+  /**
+   * A note's amplitude shape. Every release gets a floor of `MIN_RELEASE`,
+   * because what makes synthesised music sound chopped is not short notes — it
+   * is notes that reach silence in a couple of milliseconds and click on the
+   * way. Attacks get a floor too, for the same reason at the front.
+   */
   _env(gainNode, t, attack, decay, peak, sustain = 0, hold = 0) {
     const g = gainNode.gain;
+    const a = Math.max(attack, MIN_ATTACK);
+    const d = Math.max(decay, MIN_RELEASE);
     g.setValueAtTime(0.0001, t);
-    g.exponentialRampToValueAtTime(Math.max(peak, 0.0002), t + attack);
+    g.exponentialRampToValueAtTime(Math.max(peak, 0.0002), t + a);
     if (hold > 0 && sustain > 0) {
-      g.exponentialRampToValueAtTime(Math.max(sustain, 0.0002), t + attack + 0.03);
-      g.setValueAtTime(Math.max(sustain, 0.0002), t + attack + hold);
-      g.exponentialRampToValueAtTime(0.0001, t + attack + hold + decay);
+      g.exponentialRampToValueAtTime(Math.max(sustain, 0.0002), t + a + 0.03);
+      g.setValueAtTime(Math.max(sustain, 0.0002), t + a + hold);
+      g.exponentialRampToValueAtTime(0.0001, t + a + hold + d);
     } else {
-      g.exponentialRampToValueAtTime(0.0001, t + attack + decay);
+      g.exponentialRampToValueAtTime(0.0001, t + a + d);
     }
   }
 
@@ -185,8 +237,8 @@ export class AudioEngine {
     const n = this._noiseSource(t, 0.25);
     const bp = ctx.createBiquadFilter();
     bp.type = 'bandpass';
-    bp.frequency.value = 1900;
-    bp.Q.value = 0.8;
+    bp.frequency.value = 1500;
+    bp.Q.value = 0.7;
     const g = ctx.createGain();
     this._env(g, t, 0.002, 0.17, 0.42 * gain);
     n.connect(bp);
@@ -215,8 +267,8 @@ export class AudioEngine {
       const n = this._noiseSource(t + off, 0.12);
       const bp = this.ctx.createBiquadFilter();
       bp.type = 'bandpass';
-      bp.frequency.value = 1500;
-      bp.Q.value = 1.1;
+      bp.frequency.value = 1250;
+      bp.Q.value = 0.9;
       const g = this.ctx.createGain();
       this._env(g, t + off, 0.001, i === 2 ? 0.16 : 0.04, (i === 2 ? 0.4 : 0.26) * gain);
       n.connect(bp);
@@ -232,9 +284,9 @@ export class AudioEngine {
     const n = this._noiseSource(t, dur + 0.05);
     const hp = this.ctx.createBiquadFilter();
     hp.type = 'highpass';
-    hp.frequency.value = open ? 6500 : 8200;
+    hp.frequency.value = open ? 5200 : 6400;
     const g = this.ctx.createGain();
-    this._env(g, t, 0.001, dur, (open ? 0.16 : 0.12) * gain);
+    this._env(g, t, 0.001, dur, (open ? 0.11 : 0.075) * gain);
     n.connect(hp);
     hp.connect(g);
     g.connect(this.master);
@@ -254,12 +306,12 @@ export class AudioEngine {
 
     const lp = ctx.createBiquadFilter();
     lp.type = 'lowpass';
-    lp.Q.value = 6;
-    lp.frequency.setValueAtTime(clamp(f * 9, 180, 2400), t);
+    lp.Q.value = 2.2;
+    lp.frequency.setValueAtTime(clamp(f * 7, 180, 2000), t);
     lp.frequency.exponentialRampToValueAtTime(clamp(f * 2.4, 90, 900), t + dur * 0.8);
 
     const g = ctx.createGain();
-    this._env(g, t, 0.006, 0.09, 0.3 * gain, 0.24 * gain, dur);
+    this._env(g, t, 0.008, 0.14, 0.3 * gain, 0.24 * gain, dur);
     const subG = ctx.createGain();
     subG.gain.value = 0.55;
 
@@ -281,9 +333,9 @@ export class AudioEngine {
     const g = ctx.createGain();
     const lp = ctx.createBiquadFilter();
     lp.type = 'lowpass';
-    lp.Q.value = 3;
-    lp.frequency.setValueAtTime(f * 7, t);
-    lp.frequency.exponentialRampToValueAtTime(f * 1.6, t + dur);
+    lp.Q.value = 1.2;
+    lp.frequency.setValueAtTime(clamp(f * 6, 200, 6000), t);
+    lp.frequency.exponentialRampToValueAtTime(clamp(f * 1.8, 160, 2600), t + dur);
 
     for (const [type, detune, lvl] of [
       ['triangle', -6, 0.6],
@@ -298,12 +350,14 @@ export class AudioEngine {
       o.connect(og);
       og.connect(lp);
       o.start(t);
-      o.stop(t + dur + 0.4);
+      o.stop(t + dur * 2 + 0.5);
     }
-    this._env(g, t, 0.004, dur, 0.16 * gain);
+    // The tail runs well past the note's nominal length: a plucked string does
+    // not stop the instant the next one starts.
+    this._env(g, t, 0.005, dur * 1.8 + 0.12, 0.17 * gain);
     lp.connect(g);
     g.connect(this.master);
-    this._sendTo(g, 0.35, 0.4);
+    this._sendTo(g, 0.4, 0.35);
   }
 
   lead(t, midi, dur, gain = 1) {
@@ -311,24 +365,24 @@ export class AudioEngine {
     const f = mtof(midi);
     const lp = ctx.createBiquadFilter();
     lp.type = 'lowpass';
-    lp.Q.value = 5;
-    lp.frequency.setValueAtTime(f * 10, t);
-    lp.frequency.exponentialRampToValueAtTime(f * 2.6, t + dur * 0.9);
+    lp.Q.value = 1.6;
+    lp.frequency.setValueAtTime(clamp(f * 7, 200, 6500), t);
+    lp.frequency.exponentialRampToValueAtTime(clamp(f * 2.4, 160, 3200), t + dur * 0.9);
 
     for (const det of [-9, 9]) {
       const o = ctx.createOscillator();
-      o.type = 'square';
+      o.type = 'triangle';
       o.frequency.value = f;
       o.detune.value = det;
       const og = ctx.createGain();
-      og.gain.value = 0.32;
+      og.gain.value = 0.42;
       o.connect(og);
       og.connect(lp);
       o.start(t);
       o.stop(t + dur + 0.4);
     }
     const g = ctx.createGain();
-    this._env(g, t, 0.008, 0.16, 0.19 * gain, 0.13 * gain, dur);
+    this._env(g, t, 0.014, 0.22, 0.2 * gain, 0.14 * gain, dur);
     lp.connect(g);
     g.connect(this.master);
     this._sendTo(g, 0.3, 0.45);
@@ -370,10 +424,10 @@ export class AudioEngine {
     bp.type = 'bandpass';
     bp.Q.value = 2.5;
     bp.frequency.setValueAtTime(320, t);
-    bp.frequency.exponentialRampToValueAtTime(7200, t + dur);
+    bp.frequency.exponentialRampToValueAtTime(5200, t + dur);
     const g = ctx.createGain();
     g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(0.22 * gain, t + dur);
+    g.gain.exponentialRampToValueAtTime(0.16 * gain, t + dur);
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur + 0.14);
     n.connect(bp);
     bp.connect(g);
@@ -387,9 +441,9 @@ export class AudioEngine {
     const n = this._noiseSource(t, 1.6);
     const hp = ctx.createBiquadFilter();
     hp.type = 'highpass';
-    hp.frequency.value = 4200;
+    hp.frequency.value = 3200;
     const g = ctx.createGain();
-    this._env(g, t, 0.004, 1.5, 0.26 * gain);
+    this._env(g, t, 0.006, 1.9, 0.18 * gain);
     n.connect(hp);
     hp.connect(g);
     g.connect(this.master);
@@ -432,9 +486,9 @@ export class AudioEngine {
     const ctx = this.ctx;
     const lp = ctx.createBiquadFilter();
     lp.type = 'lowpass';
-    lp.Q.value = 4;
-    lp.frequency.setValueAtTime(5200, t);
-    lp.frequency.exponentialRampToValueAtTime(900, t + dur + 0.05);
+    lp.Q.value = 1.4;
+    lp.frequency.setValueAtTime(3800, t);
+    lp.frequency.exponentialRampToValueAtTime(800, t + dur + 0.12);
     for (const m of midis) {
       for (const det of [-11, 11]) {
         const o = ctx.createOscillator();
@@ -450,7 +504,7 @@ export class AudioEngine {
       }
     }
     const g = ctx.createGain();
-    this._env(g, t, 0.005, dur + 0.08, 0.26 * gain);
+    this._env(g, t, 0.008, dur + 0.22, 0.24 * gain);
     lp.connect(g);
     g.connect(this.master);
     this._sendTo(g, 0.3, 0.25);
@@ -561,10 +615,10 @@ export class AudioEngine {
     const n = this._noiseSource(t, 0.05);
     const bp = this.ctx.createBiquadFilter();
     bp.type = 'bandpass';
-    bp.frequency.value = 2200 + lane * 420;
-    bp.Q.value = 1.4;
+    bp.frequency.value = 1600 + lane * 300;
+    bp.Q.value = 0.9;
     const g = this.ctx.createGain();
-    this._env(g, t, 0.001, 0.035, 0.22 * this.hitSoundVolume);
+    this._env(g, t, 0.001, 0.05, 0.2 * this.hitSoundVolume);
     n.connect(bp);
     bp.connect(g);
     g.connect(this.master);

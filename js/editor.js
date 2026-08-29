@@ -10,7 +10,8 @@ import { songDef, chartFor, SONG_ORDER } from './songs/index.js';
 import { getChart, putChart, deleteChart } from './charts.js';
 import { settings } from './settings.js';
 import {
-  LANE_COUNT, NOTE_COLORS, PLAIN, noteRgbTable, keyTable, keyLabel, difficultyMeta,
+  LANE_COUNT, FLICK, FLICK_DIRS, flickChannel, noteRgbTable, keyTable, keyLabel,
+  difficultyMeta,
 } from './theme.js';
 import { clamp, roundRect, rgba, fmtTime, shade } from './util.js';
 
@@ -29,7 +30,7 @@ const state = {
   songId: SONG_ORDER[0].id,
   def: null,
   notes: [],
-  color: PLAIN,
+  flick: FLICK.NONE,
   snap: 4,
   zoom: 260, // pixels per second
   view: 0, // song time at the playhead line
@@ -121,9 +122,9 @@ function loadSong(id, seed = 'keep') {
     const saved = getChart(id);
     state.notes = saved ? cloneNotes(saved.notes) : cloneNotes(chartFor(id, 'normal').notes);
   } else {
-    state.notes = chartFor(id, seed).notes.map((n) => ({ t: n.t, lane: n.lane, dur: n.dur, color: n.color }));
+    state.notes = chartFor(id, seed).notes.map((n) => ({ t: n.t, lane: n.lane, dur: n.dur, flick: n.flick }));
   }
-  state.notes = state.notes.map((n) => ({ t: n.t, lane: n.lane, dur: n.dur || 0, color: n.color || 0 }));
+  state.notes = state.notes.map((n) => ({ t: n.t, lane: n.lane, dur: n.dur || 0, flick: n.flick || 0 }));
   sortNotes();
   state.dirty = false;
   buildSeedOptions();
@@ -153,13 +154,16 @@ function noteAt(x, y) {
   return best;
 }
 
-function addNote(lane, t, color) {
-  const note = { t: snapTime(t), lane, dur: 0, color };
+function addNote(lane, t, flick) {
+  // A lane that cannot roll that way gets a plain tap instead of an unplayable
+  // note; the palette shows which directions a lane allows.
+  const dir = flickChannel(lane, flick) >= 0 ? flick : FLICK.NONE;
+  const note = { t: snapTime(t), lane, dur: 0, flick: dir };
   // Replacing rather than stacking keeps a lane from collecting invisible
   // duplicates when you click the same slot twice.
   const dup = state.notes.find((n) => n.lane === lane && Math.abs(n.t - note.t) < 1e-3);
   if (dup) {
-    dup.color = color;
+    dup.flick = dir;
     return dup;
   }
   state.notes.push(note);
@@ -200,7 +204,7 @@ canvas.addEventListener('pointerdown', (ev) => {
     state.selected = hit;
     state.drag = { note: hit, mode: 'tail', startY: y };
   } else {
-    const note = addNote(lane, timeAt(y), state.color);
+    const note = addNote(lane, timeAt(y), state.flick);
     state.selected = note;
     state.drag = { note, mode: 'tail', startY: y };
   }
@@ -356,8 +360,7 @@ function draw() {
     const yBot = yFor(n.t);
     if (yBot < -20 || yTop > h) continue;
     const cx = left + n.lane * laneW + laneW / 2;
-    const col = noteRgb[n.color];
-    ctx.fillStyle = rgba(col, 0.3);
+    ctx.fillStyle = rgba(noteRgb.hold, 0.32);
     roundRect(ctx, cx - laneW * 0.15, yTop, laneW * 0.3, yBot - yTop, 2);
     ctx.fill();
   }
@@ -375,7 +378,7 @@ function draw() {
     const y = yFor(state.hover.t);
     ctx.save();
     ctx.globalAlpha = 0.34;
-    drawNoteShape(cx, y, noteRgb[state.color], state.color !== PLAIN);
+    drawNoteShape(cx, y, state.flick, false);
     ctx.restore();
   }
 
@@ -396,7 +399,7 @@ function draw() {
     ctx.fillStyle = 'rgba(255,255,255,0.75)';
     ctx.fillText(keyCaps[i], cx, playY + 26);
     ctx.font = `700 11px ${MONO}`;
-    ctx.fillStyle = rgba(noteRgb[i + 1], 0.85);
+    ctx.fillStyle = rgba(noteRgb.flick, 0.85);
     ctx.fillText(keyCaps[LANE_COUNT + i], cx, playY + 44);
   }
 
@@ -405,7 +408,7 @@ function draw() {
 
 function drawNote(n, y) {
   const cx = layout.left + n.lane * layout.laneW + layout.laneW / 2;
-  drawNoteShape(cx, y, noteRgb[n.color], n.color !== PLAIN);
+  drawNoteShape(cx, y, n.flick, n.dur > 0);
   if (n === state.selected) {
     const w = layout.laneW * 0.76;
     ctx.strokeStyle = PLAYHEAD;
@@ -414,30 +417,34 @@ function drawNote(n, y) {
   }
 }
 
-function drawNoteShape(cx, y, col, colored) {
+function drawNoteShape(cx, y, flick, isHold) {
   const w = layout.laneW * 0.76;
   const h = 11;
+  const col = flick ? noteRgb.flick : isHold ? noteRgb.hold : noteRgb.tap;
   const grad = ctx.createLinearGradient(0, y - h / 2, 0, y + h / 2);
-  grad.addColorStop(0, rgba(shade(col, colored ? 1.25 : 1), 1));
-  grad.addColorStop(1, rgba(shade(col, colored ? 0.7 : 0.82), 1));
+  grad.addColorStop(0, rgba(shade(col, 1.15), 1));
+  grad.addColorStop(1, rgba(shade(col, 0.72), 1));
   ctx.fillStyle = grad;
   roundRect(ctx, cx - w / 2, y - h / 2, w, h, 3);
   ctx.fill();
-  if (colored) {
-    ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = 1.6;
-    roundRect(ctx, cx - w / 2 + 0.8, y - h / 2 + 0.8, w - 1.6, h - 1.6, 2);
-    ctx.stroke();
-  }
-  if (colored) {
+
+  if (flick) {
+    const k = 3.2;
     ctx.strokeStyle = 'rgba(255,255,255,0.95)';
-    ctx.lineWidth = 1.8;
+    ctx.lineWidth = 1.6;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     ctx.beginPath();
-    ctx.moveTo(cx - 3.2, y - 1.6);
-    ctx.lineTo(cx, y + 1.8);
-    ctx.lineTo(cx + 3.2, y - 1.6);
+    if (flick === FLICK.DOWN) {
+      ctx.moveTo(cx - k, y - k * 0.45);
+      ctx.lineTo(cx, y + k * 0.5);
+      ctx.lineTo(cx + k, y - k * 0.45);
+    } else {
+      const s = flick === FLICK.LEFT ? -1 : 1;
+      ctx.moveTo(cx - s * k * 0.45, y - k);
+      ctx.lineTo(cx + s * k * 0.5, y);
+      ctx.lineTo(cx - s * k * 0.45, y + k);
+    }
     ctx.stroke();
   }
 }
@@ -477,19 +484,21 @@ function buildSeedOptions() {
 function buildPalette() {
   const grid = $('ed-palette');
   grid.replaceChildren();
-  const entries = [{ id: 'plain', label: 'Plain' }, ...NOTE_COLORS];
-  entries.forEach((c, i) => {
+  const entries = [
+    { flick: FLICK.NONE, label: 'Tap', glyph: '·' },
+    ...FLICK_DIRS.map((d) => ({ flick: d.id, label: d.label, glyph: d.glyph })),
+  ];
+  entries.forEach((e, i) => {
     const b = document.createElement('button');
     b.type = 'button';
-    b.className = 'swatch' + (state.color === i ? ' is-on' : '');
+    b.className = 'swatch' + (state.flick === e.flick ? ' is-on' : '');
     const bar = document.createElement('i');
-    bar.style.setProperty('--c', `rgb(${noteRgb[i].join(',')})`);
-    if (i !== PLAIN) bar.style.setProperty('--rim', '0 0 0 1.5px #fff');
+    bar.style.setProperty('--c', `rgb(${(e.flick ? noteRgb.flick : noteRgb.tap).join(',')})`);
     const cap = document.createElement('span');
-    cap.textContent = i === PLAIN ? keyCaps.slice(0, LANE_COUNT).join('') : keyCaps[LANE_COUNT + i - 1];
+    cap.textContent = e.glyph;
     b.append(bar, cap);
-    b.title = `${c.label} — press ${i + 1}`;
-    b.addEventListener('click', () => { state.color = i; buildPalette(); });
+    b.title = `${e.label} — press ${i + 1}`;
+    b.addEventListener('click', () => { state.flick = e.flick; buildPalette(); });
     grid.append(b);
   });
 }
@@ -497,7 +506,7 @@ function buildPalette() {
 function refreshStats() {
   $('ed-count').textContent = state.notes.length;
   $('ed-holds').textContent = state.notes.filter((n) => n.dur > 0).length;
-  $('ed-colored').textContent = state.notes.filter((n) => n.color).length;
+  $('ed-flicks').textContent = state.notes.filter((n) => n.flick).length;
 }
 
 let statusTimer = 0;
@@ -558,7 +567,7 @@ const dialog = $('ed-io');
 $('ed-export').addEventListener('click', () => {
   $('ed-io-title').textContent = 'Export — copy this JSON';
   $('ed-io-text').value = JSON.stringify(
-    { song: state.songId, notes: state.notes.map((n) => ({ t: +n.t.toFixed(4), lane: n.lane, dur: +n.dur.toFixed(4), color: n.color })) },
+    { song: state.songId, notes: state.notes.map((n) => ({ t: +n.t.toFixed(4), lane: n.lane, dur: +n.dur.toFixed(4), flick: n.flick })) },
     null,
     1
   );
@@ -582,7 +591,7 @@ $('ed-io-apply').addEventListener('click', () => {
       t: Number(n.t) || 0,
       lane: clamp(Math.round(Number(n.lane) || 0), 0, LANE_COUNT - 1),
       dur: Math.max(0, Number(n.dur) || 0),
-      color: clamp(Math.round(Number(n.color) || 0), 0, NOTE_COLORS.length),
+      flick: clamp(Math.round(Number(n.flick) || 0), 0, FLICK_DIRS.length),
     }));
     if (!notes.length) throw new Error('no notes');
     pushUndo();
@@ -618,11 +627,16 @@ window.addEventListener('keydown', (ev) => {
   }
   if (ev.code.startsWith('Digit')) {
     const n = Number(ev.code.slice(5));
-    if (n >= 1 && n <= NOTE_COLORS.length + 1) {
-      state.color = n - 1;
+    if (n >= 1 && n <= FLICK_DIRS.length + 1) {
+      state.flick = n - 1;
       buildPalette();
-      // Retint the selected note too, which is how most editors behave.
-      if (state.selected) { pushUndo(); state.selected.color = state.color; refreshStats(); }
+      // Retype the selected note too, which is how most editors behave.
+      if (state.selected) {
+        pushUndo();
+        const dir = flickChannel(state.selected.lane, state.flick) >= 0 ? state.flick : FLICK.NONE;
+        state.selected.flick = dir;
+        refreshStats();
+      }
     }
     return;
   }

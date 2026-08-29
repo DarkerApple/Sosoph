@@ -104,7 +104,7 @@ export function catalogue() {
       duration: def.duration,
       difficulties: difficulties.map((d) => {
         const chart = chartFor(id, d);
-        return { id: d, level: chart.level, notes: chart.notes.length, colored: chart.colored };
+        return { id: d, level: chart.level, notes: chart.notes.length, flicks: chart.flicks };
       }),
     };
   });
@@ -120,7 +120,7 @@ export function playable(id, difficulty, notes, label) {
   const def = songDef(id);
   const spb = def.spb;
   const chart = finalise(
-    notes.map((n) => ({ t: n.t, lane: n.lane, dur: n.dur || 0, color: n.color || 0 })),
+    notes.map((n) => ({ t: n.t, lane: n.lane, dur: n.dur || 0, flick: n.flick || 0 })),
     def,
     difficulty,
     spb
@@ -143,7 +143,7 @@ export function playable(id, difficulty, notes, label) {
     duration: def.duration,
     notes: chart.notes,
     units: chart.units,
-    colored: chart.colored,
+    flicks: chart.flicks,
     level: ratingFor(chart, def.duration),
   };
 }

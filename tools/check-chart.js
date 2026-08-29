@@ -5,18 +5,16 @@
 // game: asking a single finger to change key rows faster than it can move.
 
 import { catalogue, songDef, chartFor, SONG_ORDER } from '../js/songs/index.js';
-import { PROFILES, RELEASE_GAP_BEATS, fingerOf, rowOf } from '../js/chart.js';
-import { LANE_COUNT, NOTE_COLORS } from '../js/theme.js';
+import { PROFILES, RELEASE_GAP_BEATS } from '../js/chart.js';
+import {
+  LANE_COUNT, FLICK, FLICK_WINDOW, FLICK_CLEARANCE, flickChannel,
+} from '../js/theme.js';
 
 const errors = [];
 const warnings = [];
 
-// Coloured holds are intentional: a phrase that moves to the bottom row takes
-// its sustains with it, and holding a colour key is no harder than holding a
-// lane key. What must hold is the row-switch timing, checked below.
 
-/** How long a finger needs to change rows, per difficulty. */
-const rowSwitchFor = (diff) => (PROFILES[diff] || PROFILES.normal).rowSwitchSec;
+
 
 function checkChart(def, diff, chart) {
   const where = `${def.title}/${diff}`;
@@ -32,7 +30,10 @@ function checkChart(def, diff, chart) {
     const n = notes[i];
     if (i > 0 && n.t < notes[i - 1].t - 1e-6) fail(`notes out of order at index ${i}`);
     if (n.lane < 0 || n.lane >= LANE_COUNT) fail(`bad lane ${n.lane} at ${at(n.t)}`);
-    if (n.color < 0 || n.color > NOTE_COLORS.length) fail(`bad colour ${n.color} at ${at(n.t)}`);
+    if (n.flick && flickChannel(n.lane, n.flick) < 0) {
+      fail(`lane ${n.lane} cannot flick that way at ${at(n.t)}`);
+    }
+    if (n.flick && n.isHold) fail(`hold cannot also be a flick at ${at(n.t)}`);
     if (n.t < 0) fail(`negative time at index ${i}`);
     if (n.t + n.dur > def.duration) fail(`note past the song end at ${at(n.t)}`);
   }
@@ -58,23 +59,27 @@ function checkChart(def, diff, chart) {
     laneWasHold[n.lane] = n.isHold;
   }
 
-  // --- one finger, one job -------------------------------------------------
-  // Two notes on the same finger in the same instant are unplayable, and a row
-  // change needs time for the finger to travel.
-  const needed = rowSwitchFor(diff);
-  const fingerFree = new Array(LANE_COUNT).fill(-Infinity);
-  const fingerRow = new Array(LANE_COUNT).fill(0);
+  // --- flicks have somewhere to roll -----------------------------------------
+  // A flick is only playable if the key it rolls onto is free for the length of
+  // the roll. If another note wants that key in the meantime, one finger is
+  // being asked for two things.
+  const claims = new Map();
   for (const n of notes) {
-    const f = fingerOf(n);
-    const row = rowOf(n);
-    if (fingerRow[f] !== row && n.t - fingerFree[f] < needed - 1e-6) {
-      fail(
-        `finger ${f} has ${(n.t - fingerFree[f]) * 1000 | 0}ms to change rows at ${at(n.t)} ` +
-        `(needs ${Math.round(needed * 1000)}ms)`
-      );
+    if (!claims.has(n.lane)) claims.set(n.lane, []);
+    claims.get(n.lane).push([n.t, n.t + n.dur]);
+  }
+  for (const n of notes) {
+    if (!n.flick) continue;
+    const ch = flickChannel(n.lane, n.flick);
+    // Only a sideways roll lands on a lane key; a down-flick has its row to
+    // itself, so nothing can be in its way.
+    if (n.flick === FLICK.DOWN) continue;
+    const clash = (claims.get(ch) || []).find(
+      ([a, b]) => n.t - FLICK_CLEARANCE < b - 1e-6 && n.t + FLICK_WINDOW > a + 1e-6
+    );
+    if (clash) {
+      fail(`flick at ${at(n.t)} rolls onto lane ${ch}, which is busy at ${at(clash[0])}`);
     }
-    fingerFree[f] = n.t + n.dur;
-    fingerRow[f] = row;
   }
 
   // --- simultaneity --------------------------------------------------------
@@ -84,8 +89,8 @@ function checkChart(def, diff, chart) {
     while (j + 1 < notes.length && notes[j + 1].t - notes[i].t < 1e-4) j++;
     const chord = notes.slice(i, j + 1);
     if (chord.length > 2) fail(`${chord.length}-note chord at ${at(notes[i].t)}`);
-    const fingers = new Set(chord.map(fingerOf));
-    if (fingers.size < chord.length) fail(`chord at ${at(notes[i].t)} needs one finger twice`);
+    const lanes = new Set(chord.map((n) => n.lane));
+    if (lanes.size < chord.length) fail(`chord at ${at(notes[i].t)} needs one finger twice`);
     i = j + 1;
   }
 
@@ -114,14 +119,7 @@ function checkChart(def, diff, chart) {
   }
   if (worst > 6) warn(`${worst.toFixed(1)}s with no notes after ${at(worstAt)}`);
 
-  let switches = 0;
-  const seenRow = new Array(LANE_COUNT).fill(0);
-  for (const n of notes) {
-    const f = fingerOf(n);
-    if (seenRow[f] !== rowOf(n)) { switches++; seenRow[f] = rowOf(n); }
-  }
-
-  return { peak, minGap, switches, holds: notes.filter((n) => n.isHold).length };
+  return { peak, minGap, holds: notes.filter((n) => n.isHold).length };
 }
 
 // ---------------------------------------------------------------- report ---
@@ -139,9 +137,9 @@ for (const entry of catalogue()) {
     for (const n of chart.notes) spread[n.lane]++;
     console.log(
       `  ${pad(diff, 7)} lv${num(chart.level, 2)}  ${num(chart.notes.length, 4)} notes  ` +
-      `${num(st.holds ?? 0, 3)} holds  ${num(chart.colored, 3)} colour ` +
-      `(${num(Math.round((chart.colored / chart.notes.length) * 100), 2)}%)  ` +
-      `peak ${num(st.peak ?? 0, 2)}/s  ${num(st.switches ?? 0, 3)} row switches  ` +
+      `${num(st.holds ?? 0, 3)} holds  ${num(chart.flicks, 3)} flicks ` +
+      `(${num(Math.round((chart.flicks / chart.notes.length) * 100), 2)}%)  ` +
+      `peak ${num(st.peak ?? 0, 2)}/s  min gap ${num(((st.minGap ?? 0) * 1000) | 0, 4)}ms  ` +
       `lanes ${spread.join('/')}`
     );
   }

@@ -17,39 +17,49 @@ over `file://`.
 
 ## Playing
 
-Four lanes on the home row, and a second row of **colour keys** under the same
-four fingers:
+Four lanes on the home row, and three kinds of note:
 
 ```
-  D   F   J   K      white notes — press the note's own lane key
-  C   V   N   M      coloured notes — press the matching colour key
+  tap     press the lane key                        D F J K
+  hold    press and keep holding
+  flick   press, then roll onto the next key over    ← → ↓
 ```
 
-`C` is red, `V` yellow, `N` green, `M` blue, and each colour sits directly under
-the lane it usually appears in, so a coloured note means *same finger, one row
-down*. Plain notes are white and coloured notes are not, so which row a note
-wants is readable from the note itself, with no legend to memorise.
+A **flick** is not a second key to memorise. Your finger is already on the lane
+key; finishing the note is one short roll in the direction the arrow points —
+left or right along the same row, or down onto the key underneath, `C V N M`.
+It is the same motion a touch player makes as a swipe, so the note means the
+same thing on both.
 
-**Colour comes in phrases, not in ones.** A finger cannot flick between the two
-rows note to note, so colour is assigned to whole runs: your hand drops to the
-bottom row for a phrase and comes back up for the next one. Around a third of
-the notes on EASY and 40–45 % on the harder charts are coloured, which makes
-moving between the rows the thing you are actually playing rather than an
-occasional garnish.
+A flick is graded on its *tap*, not on its roll: the timing you are being judged
+on is the one you can feel. The roll has 160 ms to land, and if it never does
+the note breaks.
+
+Charts only place a flick when the key it rolls onto is genuinely free — for the
+roll itself and for a moment beforehand, so the other hand has let go of that
+key first. Flicks also come in figures rather than at random: a lone flick ends
+a phrase, a pair rolls out and back, a sweep walks one direction across the
+lanes.
 
 | | |
 |---|---|
 | Pause | <kbd>Esc</kbd> |
 | Song list | arrow keys to move, <kbd>Enter</kbd> to play |
-| Touch | tap or slide across the lanes; a tap takes whatever note is there, coloured or not |
+| Touch | tap the lanes; swipe in the arrow's direction to finish a flick |
 
 Long notes must be held until they run out; releasing early breaks the combo.
 Judgement windows are ±45 ms Perfect, ±90 ms Great, ±135 ms Good. Score is
 1,000,000 split 90 % accuracy / 10 % combo, so a full Perfect run scores exactly
 one million.
 
-Colour notes can be turned off in settings, which flattens every chart back to
-plain four-key. Key bindings and the four note colours are both remappable.
+Flicks can be turned off in settings, which plays every one as an ordinary tap.
+Key bindings are remappable, and **Settings → Notes** sets the shape (bar,
+capsule or circle), the size, and a colour per note kind, with a live preview
+drawn from the real sprites.
+
+Press <kbd>F3</kbd> at any time for the monitor: frame times, dropped frames,
+audio clock drift, output latency, and your own hit offset with the audio-offset
+value that would cancel it.
 
 ## Songs
 
@@ -57,28 +67,26 @@ Sixteen songs, 76 to 190 BPM, each with two to five charts.
 
 | | Genre | BPM | Length | Charts |
 |---|---|---|---|---|
-| **Paper Lanterns** | Ballad | 76 | 1:45 | Easy 4 · Normal 6 · Hard 8 · Expert 15 |
-| **Cold Open** | Downtempo | 88 | 1:37 | Easy 4 · Normal 6 · Hard 9 |
-| **Marmalade Sky** | Lo-fi | 96 | 1:23 | Easy 5 · Normal 10 |
-| **Glass Waltz** | Waltz | 132 | 1:41 | Easy 7 · Normal 10 · Hard 14 |
-| **Sunroom** | House | 112 | 1:37 | Easy 5 · Normal 13 · Hard 14 |
-| **Neon Alleyway** | Funk | 108 | 1:32 | Easy 6 · Normal 13 · Hard 14 · Expert 19 · Master 23 |
-| **Hello, Sekai** | Pop | 140 | 1:25 | Easy 7 · Normal 13 · Hard 16 · Expert 21 |
-| **Neon Drift** | Synthwave | 128 | 1:33 | Easy 6 · Normal 13 · Hard 18 · Expert 25 |
-| **Midnight Transit** | Drum & Bass | 174 | 1:31 | Easy 7 · Normal 11 · Hard 13 · Expert 18 |
-| **Afterimage** | Future Bass | 146 | 1:35 | Easy 8 · Normal 14 · Hard 20 · Expert 21 |
-| **Solstice** | Trance | 138 | 1:54 | Easy 6 · Normal 12 · Hard 20 · Expert 29 · Master 45 |
-| **Static Bloom** | Rock | 158 | 1:28 | Easy 9 · Normal 16 · Hard 18 · Expert 31 · Master 34 |
-| **Pixel Rain** | Chiptune | 150 | 1:33 | Easy 9 · Normal 18 · Hard 25 · Expert 31 · Master 40 |
-| **Untitled Sorrow** | Piano Rock | 172 | 1:32 | Easy 7 · Normal 15 · Hard 22 · Expert 37 · Master 40 |
-| **Vivid Impact** | Big Room | 168 | 1:34 | Normal 13 · Hard 21 · Expert 32 · Master 36 |
-| **Iron Sequence** | Hardcore | 190 | 1:34 | Normal 20 · Hard 28 · Expert 41 · Master 45 |
+| **Paper Lanterns** | Ballad | 76 | 1:45 | Easy 4 · Normal 6 · Hard 7 · Expert 15 |
+| **Cold Open** | Downtempo | 88 | 1:37 | Easy 4 · Normal 5 · Hard 9 |
+| **Marmalade Sky** | Lo-fi | 96 | 1:23 | Easy 4 · Normal 9 |
+| **Glass Waltz** | Waltz | 132 | 1:41 | Easy 6 · Normal 9 · Hard 12 |
+| **Sunroom** | House | 112 | 1:37 | Easy 5 · Normal 12 · Hard 15 |
+| **Neon Alleyway** | Funk | 108 | 1:32 | Easy 6 · Normal 12 · Hard 15 · Expert 19 · Master 24 |
+| **Hello, Sekai** | Pop | 140 | 1:25 | Easy 7 · Normal 12 · Hard 16 · Expert 22 |
+| **Neon Drift** | Synthwave | 128 | 1:33 | Easy 6 · Normal 12 · Hard 18 · Expert 25 |
+| **Midnight Transit** | Drum & Bass | 174 | 1:31 | Easy 6 · Normal 10 · Hard 13 · Expert 19 |
+| **Afterimage** | Future Bass | 146 | 1:35 | Easy 8 · Normal 14 · Hard 20 · Expert 22 |
+| **Solstice** | Trance | 138 | 1:54 | Easy 6 · Normal 11 · Hard 19 · Expert 28 · Master 45 |
+| **Static Bloom** | Rock | 158 | 1:28 | Easy 8 · Normal 15 · Hard 18 · Expert 32 · Master 36 |
+| **Pixel Rain** | Chiptune | 150 | 1:33 | Easy 8 · Normal 16 · Hard 25 · Expert 32 · Master 41 |
+| **Untitled Sorrow** | Piano Rock | 172 | 1:32 | Easy 8 · Normal 14 · Hard 24 · Expert 37 · Master 42 |
+| **Vivid Impact** | Big Room | 168 | 1:34 | Normal 13 · Hard 21 · Expert 32 · Master 38 |
+| **Iron Sequence** | Hardcore | 190 | 1:34 | Normal 18 · Hard 28 · Expert 42 · Master 45 |
 
 Levels are computed from the finished chart rather than hand-assigned, so they
-stay honest when a song or a difficulty profile changes. Density is most of it,
-but the third term is how often a hand has to change key rows — which is what
-actually makes a colour-heavy chart hard, since the *share* of coloured notes is
-roughly constant across the library.
+stay honest when a song or a difficulty profile changes. Density is most of it;
+flicks are the rest, since a flick costs a whole gesture rather than a keypress.
 
 A tier is only offered when its chart is meaningfully different from the one
 below it. A sparse ballad has nothing to add above HARD and a 190 BPM hardcore
@@ -128,17 +136,15 @@ means:
   *seconds*, not beats, because without one a NORMAL at 190 BPM is twice the
   chart a NORMAL at 96 BPM is.
 
-Colour is painted on afterwards, over a finished note map. Each lane's notes are
-cut into runs at exactly the gaps long enough to change rows in, and a whole run
-either moves to the colour key or stays on the lane key — runs the music
-stresses are likelier to move, and a run straight after a coloured one is
-likelier to stay, so the hand alternates instead of camping on one row. Because
-every run is enterable and leavable by construction, the density can be high
-without ever asking for a switch that is not physically there.
+Flicks are painted on afterwards, over a finished note map, because whether a
+roll is playable depends on what else is in the chart. Notes the music stresses
+are likelier to become one, and each is then extended into a figure — a pair
+that rolls out and back, or a sweep across the lanes — so arrows arrive as
+shapes rather than as a scattering.
 
-Two rules keep the two key rows playable, and `npm run check` enforces both:
+Two rules keep the chart physically playable, and `npm run check` enforces both:
 
-- a finger is never asked to change rows faster than that difficulty allows;
+- a flick's destination key is free for the roll and for the moment before it;
 - a hold is always trimmed to leave a quarter-beat to release in before the next
   note in its lane.
 
@@ -157,7 +163,7 @@ Import/export is plain JSON.
 |---|---|
 | Place a note | click a lane; drag up to make it a hold |
 | Delete | right-click, or select and press <kbd>Del</kbd> |
-| Colour | <kbd>1</kbd>–<kbd>5</kbd> — plain, red, yellow, green, blue |
+| Note type | <kbd>1</kbd>–<kbd>4</kbd> — tap, flick ←, flick →, flick ↓ |
 | Play from the playhead | <kbd>Space</kbd> |
 | Scroll / zoom | wheel, <kbd>Ctrl</kbd>+wheel |
 | Undo / redo | <kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> |
@@ -174,9 +180,9 @@ difficulty colours, which means a splash of colour is always telling you
 something rather than decorating something.
 
 The playfield follows from that: a black field, white lane rules, a solid white
-judge line, and notes that are either white or one of the four colours. Hit
-effects are deliberately small and clipped to the field, so the only thing that
-ever moves outside a lane is the score.
+judge line, and one colour per note kind — white taps, cyan holds, pink flicks.
+Hit effects are deliberately small and clipped to the field, so the only thing
+that ever moves outside a lane is the score.
 
 Menus are pages, not overlays — a header with tabs, one section at a time, and
 the canvas hidden entirely while you are in them. Nothing is being drawn behind
@@ -203,6 +209,12 @@ milliseconds. A manual offset slider covers the rest.
 counter, combo pops, background bloom — is exponentially damped via
 `damp(a, b, lambda, dt)`, so animations feel identical at any refresh rate.
 
+**A synth that does not click.** Every envelope has a floor on its attack and
+release, because what makes synthesised music sound chopped is not short notes —
+it is notes that reach silence in two milliseconds and click on the way. The
+master bus adds a high shelf, a gentle low pass and a soft-clip curve, since raw
+saw and square waves are far brighter than any real instrument.
+
 **No allocation during play.** Particles come from a fixed pool and glow-heavy
 note graphics are pre-rendered to sprites on resize, so the frame loop never
 touches `shadowBlur` and the GC never causes a hitch mid-song.
@@ -220,6 +232,7 @@ js/music.js           authoring helpers shared by every song
 js/chart.js           difficulty profiles and chart generation
 js/songs/*.js         one file per song: soundtrack + playable moments
 js/library.js         song-list filtering, sorting and grouping
+js/monitor.js         frame-time, clock-drift and hit-offset readout
 js/audio.js           synth rack, lookahead scheduler, transport clock
 js/game.js            judgement, scoring, hold logic
 js/renderer.js        canvas rendering

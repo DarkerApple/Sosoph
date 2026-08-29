@@ -17,8 +17,7 @@ import {
   roundRect, fmtScore, fmtTime, hexToRgb, rgba, shade,
 } from './util.js';
 import {
-  LANE_COUNT, NOTE_COLORS, PLAIN, JUDGE_HEX, noteRgbTable, keyTable,
-  keyLabel, difficultyMeta,
+  LANE_COUNT, FLICK, JUDGE_HEX, noteRgbTable, keyTable, keyLabel, difficultyMeta,
 } from './theme.js';
 
 const FONT = `system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif`;
@@ -42,8 +41,8 @@ export class Renderer {
     // Damped visual state, owned entirely by the renderer.
     this.laneGlow = new Array(LANE_COUNT).fill(0);
     this.laneHit = new Array(LANE_COUNT).fill(0);
-    this.laneTint = new Array(LANE_COUNT).fill(PLAIN);
-    this.colorGlow = new Array(NOTE_COLORS.length).fill(0);
+    this.laneTint = new Array(LANE_COUNT).fill(null);
+    this.downGlow = new Array(LANE_COUNT).fill(0);
     this.displayScore = 0;
     this.displayAcc = 100;
     this.comboScale = 1;
@@ -88,8 +87,7 @@ export class Renderer {
     };
     this.pf.travel = this.pf.receptorY - this.pf.spawnY;
 
-    this.noteW = this.pf.laneW * 0.76;
-    this.noteH = clamp(this.pf.laneW * 0.13, 11, 18);
+    this.metrics = this._noteMetrics();
     this.ui = w < 560 ? 0.82 : w < 780 ? 0.92 : 1;
     this.hudPad = clamp(w * 0.025, 16, 32);
 
@@ -103,55 +101,89 @@ export class Renderer {
 
   // -------------------------------------------------------------- sprites --
 
+  /**
+   * Note geometry for the chosen style and size. Every style keeps the same
+   * footprint so a chart reads the same however it is drawn.
+   */
+  _noteMetrics() {
+    const laneW = this.pf.laneW;
+    const scale = clamp(this.settings.noteScale ?? 1, 0.5, 1.6);
+    const base = clamp(laneW * 0.1, 8, 15) * scale;
+    const style = this.settings.noteStyle || 'bar';
+    if (style === 'circle') {
+      const d = clamp(base * 2.4, 14, laneW * 0.62);
+      return { style, w: d, h: d, r: d / 2 };
+    }
+    if (style === 'capsule') {
+      const h = base * 1.15;
+      return { style, w: laneW * 0.66, h, r: h / 2 };
+    }
+    return { style, w: laneW * 0.72, h: base, r: Math.min(3, base * 0.28) };
+  }
+
   _buildSprites() {
-    this.noteSprites = this.noteRgb.map((c, i) => this._noteSprite(c, i !== PLAIN));
+    const c = this.noteRgb;
+    this.noteSprites = {
+      tap: this._noteSprite(c.tap, FLICK.NONE),
+      hold: this._noteSprite(c.hold, FLICK.NONE),
+      flick1: this._noteSprite(c.flick, FLICK.LEFT),
+      flick2: this._noteSprite(c.flick, FLICK.RIGHT),
+      flick3: this._noteSprite(c.flick, FLICK.DOWN),
+    };
+  }
+
+  /** Sprite key for a note, given the flick actually in force. */
+  spriteFor(note) {
+    if (note.play) return this.noteSprites[`flick${note.play}`];
+    return note.isHold ? this.noteSprites.hold : this.noteSprites.tap;
   }
 
   /**
-   * A note is a wide rounded bar with a white rim. Coloured notes carry a
-   * chevron pointing at the row below, so they stay legible without relying on
-   * hue alone.
+   * A note is a small filled shape with a bright top edge. A flick carries a
+   * chevron pointing the way it must be rolled — direction is the one thing a
+   * player has to read off the note itself, so it is drawn, not implied.
    */
-  _noteSprite(col, isColored) {
-    const w = this.noteW;
-    const h = this.noteH;
-    const pad = 10;
+  _noteSprite(col, flick) {
+    const { w, h, r, style } = this.metrics;
+    const pad = 8;
     const c = document.createElement('canvas');
     c.width = Math.ceil((w + pad * 2) * this.dpr);
     c.height = Math.ceil((h + pad * 2) * this.dpr);
     const g = c.getContext('2d');
     g.scale(this.dpr, this.dpr);
-    const r = 3;
 
     const grad = g.createLinearGradient(0, pad, 0, pad + h);
-    grad.addColorStop(0, rgba(shade(col, isColored ? 1.25 : 1), 1));
-    grad.addColorStop(1, rgba(shade(col, isColored ? 0.7 : 0.82), 1));
+    grad.addColorStop(0, rgba(shade(col, 1.15), 1));
+    grad.addColorStop(1, rgba(shade(col, 0.72), 1));
     g.fillStyle = grad;
-    roundRect(g, pad, pad, w, h, r);
-    g.fill();
-
-    // A plain note is already the brightest thing on a black field and needs no
-    // outline; a coloured one gets a white rim so it reads as the same object
-    // wearing a colour rather than as a different, dimmer shape.
-    if (isColored) {
-      g.strokeStyle = '#ffffff';
-      g.lineWidth = 2;
-      roundRect(g, pad + 1, pad + 1, w - 2, h - 2, Math.max(1, r - 1));
-      g.stroke();
+    if (style === 'circle') {
+      g.beginPath();
+      g.arc(pad + w / 2, pad + h / 2, w / 2, 0, Math.PI * 2);
+      g.fill();
+    } else {
+      roundRect(g, pad, pad, w, h, r);
+      g.fill();
     }
 
-    if (isColored) {
+    if (flick) {
       const cx = pad + w / 2;
       const cy = pad + h / 2;
-      const k = h * 0.3;
-      g.strokeStyle = '#ffffff';
-      g.lineWidth = 1.8;
+      const k = Math.max(2.6, Math.min(w, h) * 0.24);
+      g.strokeStyle = 'rgba(255,255,255,0.95)';
+      g.lineWidth = Math.max(1.4, k * 0.5);
       g.lineCap = 'round';
       g.lineJoin = 'round';
       g.beginPath();
-      g.moveTo(cx - k, cy - k * 0.5);
-      g.lineTo(cx, cy + k * 0.55);
-      g.lineTo(cx + k, cy - k * 0.5);
+      if (flick === FLICK.DOWN) {
+        g.moveTo(cx - k, cy - k * 0.45);
+        g.lineTo(cx, cy + k * 0.5);
+        g.lineTo(cx + k, cy - k * 0.45);
+      } else {
+        const s = flick === FLICK.LEFT ? -1 : 1;
+        g.moveTo(cx - s * k * 0.45, cy - k);
+        g.lineTo(cx + s * k * 0.5, cy);
+        g.lineTo(cx - s * k * 0.45, cy + k);
+      }
       g.stroke();
     }
 
@@ -170,7 +202,7 @@ export class Renderer {
     this.judgeFx = { label, rgb: JUDGE_RGB[label] || JUDGE_RGB.GOOD, time, delta, show: true };
   }
 
-  hitLane(lane, strength = 1, tint = PLAIN) {
+  hitLane(lane, strength = 1, tint = null) {
     this.laneHit[lane] = Math.max(this.laneHit[lane], strength);
     this.laneTint[lane] = tint;
   }
@@ -185,8 +217,8 @@ export class Renderer {
       this.laneGlow[i] = damp(this.laneGlow[i], g.laneHeld[i] ? 1 : 0, 24, dt);
       this.laneHit[i] = damp(this.laneHit[i], 0, 8, dt);
     }
-    for (let i = 0; i < NOTE_COLORS.length; i++) {
-      this.colorGlow[i] = damp(this.colorGlow[i], g.channelHeld[LANE_COUNT + i] ? 1 : 0, 24, dt);
+    for (let i = 0; i < LANE_COUNT; i++) {
+      this.downGlow[i] = damp(this.downGlow[i], g.channelHeld[LANE_COUNT + i] ? 1 : 0, 24, dt);
     }
     this.displayScore = damp(this.displayScore, g.score, 10, dt);
     this.displayAcc = damp(this.displayAcc, g.accuracy, 8, dt);
@@ -211,7 +243,7 @@ export class Renderer {
     ctx.beginPath();
     ctx.rect(this.pf.left, 0, this.pf.width, this.h);
     ctx.clip();
-    g.particles.draw(ctx, this.noteRgb);
+    g.particles.draw(ctx);
     ctx.restore();
     this._drawKeyCaps(ctx);
     this._drawJudgement(ctx, t);
@@ -248,7 +280,7 @@ export class Renderer {
     for (let i = 0; i < LANE_COUNT; i++) {
       const amount = Math.max(this.laneGlow[i] * 0.55, this.laneHit[i]);
       if (amount < 0.01) continue;
-      const col = this.noteRgb[this.laneHit[i] > 0.02 ? this.laneTint[i] : PLAIN];
+      const col = (this.laneHit[i] > 0.02 && this.laneTint[i]) || this.noteRgb.tap;
       const top = receptorY - travel * 0.4;
       const grad = ctx.createLinearGradient(0, top, 0, receptorY);
       grad.addColorStop(0, rgba(col, 0));
@@ -275,7 +307,7 @@ export class Renderer {
     const { left, laneW, receptorY } = this.pf;
     const travel = g.travelTime;
     const notes = g.song.notes;
-    const bw = this.noteW * 0.36;
+    const bw = this.metrics.w * 0.6;
 
     for (let i = g.renderFrom; i < notes.length; i++) {
       const n = notes[i];
@@ -292,9 +324,9 @@ export class Renderer {
       const bottom = n.holdActive ? receptorY : Math.min(yHead, receptorY + 200);
       if (bottom - top < 1) continue;
 
-      const col = n.holdBroken ? [104, 112, 128] : this.noteRgb[n.play];
-      ctx.fillStyle = rgba(col, n.holdBroken ? 0.2 : n.holdActive ? 0.6 : 0.42);
-      roundRect(ctx, cx - bw / 2, top, bw, bottom - top, 2);
+      const col = n.holdBroken ? [104, 112, 128] : this.noteRgb.hold;
+      ctx.fillStyle = rgba(col, n.holdBroken ? 0.2 : n.holdActive ? 0.62 : 0.45);
+      roundRect(ctx, cx - bw / 2, top, bw, bottom - top, bw * 0.3);
       ctx.fill();
     }
   }
@@ -313,7 +345,7 @@ export class Renderer {
       if (n.gone || n.headJudged) continue;
       if (y > this.h + 80) continue;
 
-      const sprite = this.noteSprites[n.play];
+      const sprite = this.spriteFor(n);
       const cx = left + n.lane * laneW + laneW / 2;
       // A short fade at the spawn line, so notes appear rather than pop in.
       ctx.globalAlpha = clamp((1 - (n.t - t) / travel) / 0.08, 0, 1);
@@ -331,8 +363,8 @@ export class Renderer {
   }
 
   /**
-   * Two rows of key caps under the field: the lane keys, and the colour keys
-   * below them. This is the whole control scheme, always on screen.
+   * Two rows of key caps under the field: the lane keys, and the row a downward
+   * flick rolls onto. This is the whole control scheme, always on screen.
    */
   _drawKeyCaps(ctx) {
     const { left, laneW, receptorY } = this.pf;
@@ -346,8 +378,8 @@ export class Renderer {
     for (let i = 0; i < LANE_COUNT; i++) {
       const cx = left + i * laneW + laneW / 2;
       for (let row = 0; row < 2; row++) {
-        const lit = row === 0 ? this.laneGlow[i] : this.colorGlow[i];
-        const col = row === 0 ? [226, 232, 240] : this.noteRgb[i + 1];
+        const lit = row === 0 ? this.laneGlow[i] : this.downGlow[i];
+        const col = row === 0 ? [226, 232, 240] : this.noteRgb.flick;
         const y = rowY[row];
         ctx.fillStyle = rgba(col, 0.08 + 0.42 * lit);
         roundRect(ctx, cx - capW / 2, y - capH / 2, capW, capH, 5);

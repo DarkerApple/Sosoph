@@ -1,16 +1,17 @@
-// Low-latency input for eight channels: four lane keys (D F J K) and four
-// colour keys on the row below (C V N M).
+// Low-latency input for eight channels: four lane keys (D F J K) and the four
+// keys on the row below (C V N M) that a downward flick rolls onto.
 //
 // Key events carry a `timeStamp` on the same clock as `performance.now()`, so a
 // press can be judged at the instant the key physically went down rather than
 // on the next animation frame. That is worth several milliseconds of accuracy.
 
-import { keyTable, LANE_COUNT, COLOR_COUNT } from './theme.js';
+import { keyTable, LANE_COUNT, DOWN_KEYS, FLICK } from './theme.js';
 
-export const CHANNELS = LANE_COUNT + COLOR_COUNT;
+export const CHANNELS = LANE_COUNT + DOWN_KEYS.length;
 
-/** Lane `n` is channel `n`; colour 1..4 lives on the four channels above. */
-export const colorChannel = (color) => LANE_COUNT + color - 1;
+
+/** How far a finger must travel before it counts as a swipe. */
+const SWIPE_PX = 26;
 
 /** Arrow keys mirror the lane row for players without a full keyboard. */
 const ALIASES = { ArrowLeft: 0, ArrowDown: 1, ArrowUp: 2, ArrowRight: 3 };
@@ -24,6 +25,7 @@ export class InputManager {
     this.queue = [];
     this.onPause = null;
     this.touchLanes = new Map(); // pointerId -> lane
+    this.touchStart = new Map(); // pointerId -> where the finger went down
     /** Set by the renderer so touches can be mapped to lanes. */
     this.layout = null;
 
@@ -63,8 +65,8 @@ export class InputManager {
     return age >= 0 && age < 0.25 ? age : 0;
   }
 
-  _push(channel, down, ev, wildcard = false) {
-    this.queue.push({ channel, down, age: this._eventAge(ev), wildcard });
+  _push(channel, down, ev) {
+    this.queue.push({ channel, down, age: this._eventAge(ev) });
   }
 
   _isFormTarget(ev) {
@@ -104,37 +106,52 @@ export class InputManager {
     return Math.max(0, Math.min(LANE_COUNT - 1, Math.floor(x / l.laneW)));
   }
 
-  /**
-   * Touch has no second row to reach for, so a tap is a wildcard: it takes
-   * whatever note is nearest in that lane, coloured or not.
-   */
   _onPointerDown(ev) {
     if (!this.enabled || ev.pointerType === 'mouse') return;
     const lane = this._laneAt(ev.clientX);
     if (lane < 0) return;
     ev.preventDefault();
     this.touchLanes.set(ev.pointerId, lane);
+    this.touchStart.set(ev.pointerId, { x: ev.clientX, y: ev.clientY, lane, swiped: false });
     if (!this.held[lane]) {
       this.held[lane] = true;
-      this._push(lane, true, ev, true);
+      this._push(lane, true, ev);
     }
   }
 
-  /** Sliding across lanes retriggers, which is how touch VSRGs are played. */
+  /**
+   * On touch a flick is a literal swipe, so a pointer that moves far enough in
+   * one direction reports that direction rather than a second key. Sliding
+   * across lanes still retriggers, which is how touch VSRGs are played.
+   */
   _onPointerMove(ev) {
     if (!this.enabled || !this.touchLanes.has(ev.pointerId)) return;
+    const start = this.touchStart.get(ev.pointerId);
+    if (start && !start.swiped) {
+      const dx = ev.clientX - start.x;
+      const dy = ev.clientY - start.y;
+      if (Math.abs(dx) > SWIPE_PX || dy > SWIPE_PX) {
+        const dir = dy > Math.abs(dx) ? FLICK.DOWN : dx < 0 ? FLICK.LEFT : FLICK.RIGHT;
+        start.swiped = true;
+        this.queue.push({ channel: start.lane, swipe: dir, age: 0 });
+        return;
+      }
+    }
+
     const prev = this.touchLanes.get(ev.pointerId);
     const lane = this._laneAt(ev.clientX);
     if (lane < 0 || lane === prev) return;
     this._releaseLaneIfUnclaimed(prev, ev, ev.pointerId);
     this.touchLanes.set(ev.pointerId, lane);
+    this.touchStart.set(ev.pointerId, { x: ev.clientX, y: ev.clientY, lane, swiped: false });
     if (!this.held[lane]) {
       this.held[lane] = true;
-      this._push(lane, true, ev, true);
+      this._push(lane, true, ev);
     }
   }
 
   _onPointerUp(ev) {
+    this.touchStart.delete(ev.pointerId);
     if (!this.touchLanes.has(ev.pointerId)) return;
     const lane = this.touchLanes.get(ev.pointerId);
     this.touchLanes.delete(ev.pointerId);
@@ -147,7 +164,7 @@ export class InputManager {
     }
     if (this.held[lane]) {
       this.held[lane] = false;
-      if (this.enabled) this._push(lane, false, ev, true);
+      if (this.enabled) this._push(lane, false, ev);
     }
   }
 
@@ -155,10 +172,11 @@ export class InputManager {
     for (let i = 0; i < CHANNELS; i++) {
       if (this.held[i]) {
         this.held[i] = false;
-        this.queue.push({ channel: i, down: false, age: 0, wildcard: false });
+        this.queue.push({ channel: i, down: false, age: 0 });
       }
     }
     this.touchLanes.clear();
+    this.touchStart.clear();
   }
 
   drain() {
