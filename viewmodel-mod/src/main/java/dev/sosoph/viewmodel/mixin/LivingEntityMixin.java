@@ -2,8 +2,8 @@ package dev.sosoph.viewmodel.mixin;
 
 import dev.sosoph.viewmodel.config.ConfigManager;
 import dev.sosoph.viewmodel.config.ViewModelConfig;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.entity.LivingEntity;
+import net.minecraft.client.Minecraft;
+import net.minecraft.world.entity.LivingEntity;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -16,13 +16,13 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  */
 @Mixin(LivingEntity.class)
 public class LivingEntityMixin {
-    @Inject(method = "getHandSwingDuration", at = @At("RETURN"), cancellable = true)
+    @Inject(method = "getCurrentSwingDuration", at = @At("RETURN"), cancellable = true)
     private void viewmodel$swingSpeed(CallbackInfoReturnable<Integer> cir) {
         ViewModelConfig config = ConfigManager.get();
         if (!config.enabled || config.swingSpeed == 1.0F) {
             return;
         }
-        if ((Object) this != MinecraftClient.getInstance().player) {
+        if ((Object) this != Minecraft.getInstance().player) {
             return;
         }
         int duration = cir.getReturnValueI();

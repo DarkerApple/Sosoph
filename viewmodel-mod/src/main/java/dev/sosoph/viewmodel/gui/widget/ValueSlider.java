@@ -5,21 +5,23 @@ import java.util.function.DoubleConsumer;
 import java.util.function.DoubleSupplier;
 
 import dev.sosoph.viewmodel.config.Transform;
+import dev.sosoph.viewmodel.gui.Compat;
 import dev.sosoph.viewmodel.gui.Theme;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.text.Text;
-import net.minecraft.util.math.MathHelper;
-import org.lwjgl.glfw.GLFW;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.input.KeyEvent;
+import net.minecraft.client.input.MouseButtonEvent;
+import net.minecraft.network.chat.Component;
+import net.minecraft.util.Mth;
 
 /**
  * A full width slider row that always lands on a step.
  *
- * <p>Drag it, scroll it, or nudge it with the arrow keys. Holding shift switches to
- * the fine step and right clicking puts the value back to its default.
+ * <p>Drag it, nudge it with the arrow keys, or hold shift and scroll. Holding shift
+ * switches to the fine step and right clicking puts the value back to its default.
  */
 public class ValueSlider extends Row {
-    private static final String DEGREES = "\u00B0";
+    private static final String DEGREES = "°";
 
     private final double min;
     private final double max;
@@ -33,7 +35,7 @@ public class ValueSlider extends Row {
 
     private boolean dragging;
 
-    public ValueSlider(int width, Text label, double min, double max, double step, double fineStep,
+    public ValueSlider(int width, Component label, double min, double max, double step, double fineStep,
                        double defaultValue, String suffix, int decimals,
                        DoubleSupplier getter, DoubleConsumer setter) {
         super(width, HEIGHT, label);
@@ -49,19 +51,19 @@ public class ValueSlider extends Row {
     }
 
     /** -32..32 pixel offset slider. */
-    public static ValueSlider position(int width, Text label, DoubleSupplier getter, DoubleConsumer setter) {
+    public static ValueSlider position(int width, Component label, DoubleSupplier getter, DoubleConsumer setter) {
         return new ValueSlider(width, label, Transform.Limits.POS_MIN, Transform.Limits.POS_MAX,
                 Transform.Limits.POS_STEP, Transform.Limits.POS_FINE_STEP, 0.0, "", 2, getter, setter);
     }
 
     /** -180..180 degree slider. */
-    public static ValueSlider rotation(int width, Text label, DoubleSupplier getter, DoubleConsumer setter) {
+    public static ValueSlider rotation(int width, Component label, DoubleSupplier getter, DoubleConsumer setter) {
         return new ValueSlider(width, label, Transform.Limits.ROT_MIN, Transform.Limits.ROT_MAX,
                 Transform.Limits.ROT_STEP, Transform.Limits.ROT_FINE_STEP, 0.0, DEGREES, 1, getter, setter);
     }
 
     /** 0.1..3.0 scale slider. */
-    public static ValueSlider scale(int width, Text label, DoubleSupplier getter, DoubleConsumer setter) {
+    public static ValueSlider scale(int width, Component label, DoubleSupplier getter, DoubleConsumer setter) {
         return new ValueSlider(width, label, Transform.Limits.SCALE_MIN, Transform.Limits.SCALE_MAX,
                 Transform.Limits.SCALE_STEP, Transform.Limits.SCALE_FINE_STEP, 1.0, "x", 2, getter, setter);
     }
@@ -72,7 +74,7 @@ public class ValueSlider extends Row {
 
     private void setValue(double raw, double quantum) {
         double snapped = this.min + Math.round((raw - this.min) / quantum) * quantum;
-        snapped = MathHelper.clamp(snapped, this.min, this.max);
+        snapped = Mth.clamp(snapped, this.min, this.max);
         // Kill the floating point dust that repeated stepping leaves behind.
         snapped = Math.round(snapped * 1000.0) / 1000.0;
         if (snapped != this.getValue()) {
@@ -89,7 +91,7 @@ public class ValueSlider extends Row {
     }
 
     private void setFromMouse(double mouseX) {
-        double fraction = MathHelper.clamp((mouseX - this.getX()) / (double) this.getWidth(), 0.0, 1.0);
+        double fraction = Mth.clamp((mouseX - this.getX()) / (double) this.getWidth(), 0.0, 1.0);
         this.setValue(this.min + fraction * (this.max - this.min), this.activeStep());
     }
 
@@ -98,62 +100,62 @@ public class ValueSlider extends Row {
     }
 
     @Override
-    protected void renderWidget(DrawContext context, int mouseX, int mouseY, float delta) {
+    protected void extractContents(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float delta) {
         boolean hovered = this.isOver(mouseX, mouseY);
-        this.drawBackground(context, hovered || this.dragging);
+        this.drawBackground(graphics, hovered || this.dragging);
 
         double fraction = (this.getValue() - this.min) / (this.max - this.min);
-        int filled = (int) Math.round(MathHelper.clamp(fraction, 0.0, 1.0) * this.getWidth());
+        int filled = (int) Math.round(Mth.clamp(fraction, 0.0, 1.0) * this.getWidth());
         if (filled > 0) {
-            context.fill(this.getX(), this.getY(), this.getX() + filled, this.getY() + this.getHeight(),
+            graphics.fill(this.getX(), this.getY(), this.getX() + filled, this.getY() + this.getHeight(),
                     Theme.ACCENT_FILL);
         }
         if (filled > 0 && filled < this.getWidth()) {
-            context.fill(this.getX() + filled - 1, this.getY(), this.getX() + filled + 1,
+            graphics.fill(this.getX() + filled - 1, this.getY(), this.getX() + filled + 1,
                     this.getY() + this.getHeight(), Theme.ACCENT);
         }
 
-        context.drawTextWithShadow(this.textRenderer, this.getMessage(), this.getX() + 5, this.textY(), Theme.TEXT);
+        graphics.text(this.font, this.getMessage(), this.getX() + 5, this.textY(), Theme.TEXT);
 
         String value = this.formatValue();
-        context.drawTextWithShadow(this.textRenderer, value,
-                this.getX() + this.getWidth() - 5 - this.textRenderer.getWidth(value), this.textY(),
+        graphics.text(this.font, value, this.getX() + this.getWidth() - 5 - this.font.width(value), this.textY(),
                 this.getValue() == this.defaultValue ? Theme.TEXT_DIM : Theme.ACCENT);
 
         if (this.isFocused()) {
-            context.drawBorder(this.getX(), this.getY(), this.getWidth(), this.getHeight(), Theme.ACCENT);
+            this.drawBorder(graphics, Theme.ACCENT);
         }
     }
 
     @Override
-    public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        if (!this.active || !this.isOver(mouseX, mouseY)) {
+    public boolean mouseClicked(MouseButtonEvent click, boolean doubleClick) {
+        this.dragging = false;
+        if (!this.active || !this.isOver(Compat.mouseX(click), Compat.mouseY(click))) {
             return false;
         }
-        if (button == GLFW.GLFW_MOUSE_BUTTON_RIGHT) {
+        if (Compat.isRightClick(click)) {
             this.setValue(this.defaultValue, this.fineStep);
             this.playClick();
             return true;
         }
-        if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
+        if (Compat.isLeftClick(click)) {
             this.dragging = true;
-            this.setFromMouse(mouseX);
+            this.setFromMouse(Compat.mouseX(click));
             return true;
         }
         return false;
     }
 
     @Override
-    public boolean mouseDragged(double mouseX, double mouseY, int button, double deltaX, double deltaY) {
-        if (this.dragging && button == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
-            this.setFromMouse(mouseX);
+    public boolean mouseDragged(MouseButtonEvent click, double deltaX, double deltaY) {
+        if (this.dragging && Compat.isLeftClick(click)) {
+            this.setFromMouse(Compat.mouseX(click));
             return true;
         }
         return false;
     }
 
     @Override
-    public boolean mouseReleased(double mouseX, double mouseY, int button) {
+    public boolean mouseReleased(MouseButtonEvent click) {
         boolean wasDragging = this.dragging;
         this.dragging = false;
         return wasDragging;
@@ -176,26 +178,18 @@ public class ValueSlider extends Row {
     }
 
     @Override
-    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+    public boolean keyPressed(KeyEvent input) {
         if (!this.active || !this.isFocused()) {
             return false;
         }
-        switch (keyCode) {
-            case GLFW.GLFW_KEY_LEFT -> {
-                this.nudge(-1);
-                return true;
-            }
-            case GLFW.GLFW_KEY_RIGHT -> {
-                this.nudge(1);
-                return true;
-            }
-            case GLFW.GLFW_KEY_BACKSPACE, GLFW.GLFW_KEY_DELETE -> {
-                this.setValue(this.defaultValue, this.fineStep);
-                return true;
-            }
-            default -> {
-                return false;
-            }
+        if (input.isLeft()) {
+            this.nudge(-1);
+            return true;
         }
+        if (input.isRight()) {
+            this.nudge(1);
+            return true;
+        }
+        return false;
     }
 }

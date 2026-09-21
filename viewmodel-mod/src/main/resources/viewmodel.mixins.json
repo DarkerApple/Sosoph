@@ -2,11 +2,13 @@
   "required": true,
   "minVersion": "0.8",
   "package": "dev.sosoph.viewmodel.mixin",
-  "compatibilityLevel": "JAVA_21",
+  "compatibilityLevel": "JAVA_25",
   "client": [
-    "HeldItemFeatureRendererMixin",
-    "HeldItemRendererMixin",
-    "LivingEntityMixin"
+    "FirstPersonRendererMixin",
+    "ItemInHandLayerMixin",
+    "LivingEntityMixin",
+    "PlayerRenderStateMixin",
+    "PlayerRendererMixin"
   ],
   "injectors": {
     "defaultRequire": 1

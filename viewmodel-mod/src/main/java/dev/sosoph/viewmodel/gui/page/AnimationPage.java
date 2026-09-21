@@ -8,10 +8,10 @@ import dev.sosoph.viewmodel.gui.widget.LabelRow;
 import dev.sosoph.viewmodel.gui.widget.ScrollPanel;
 import dev.sosoph.viewmodel.gui.widget.ToggleRow;
 import dev.sosoph.viewmodel.gui.widget.ValueSlider;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.text.Text;
-import net.minecraft.util.Hand;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.network.chat.Component;
+import net.minecraft.world.InteractionHand;
 
 /** Swing timing and swing travel, with a preview you can trigger from the menu. */
 public class AnimationPage extends ConfigPage {
@@ -22,8 +22,8 @@ public class AnimationPage extends ConfigPage {
     }
 
     @Override
-    public Text getTitle() {
-        return Text.translatable("viewmodel.tab.animation");
+    public Component getTitle() {
+        return Component.translatable("viewmodel.tab.animation");
     }
 
     @Override
@@ -31,52 +31,52 @@ public class AnimationPage extends ConfigPage {
         ScrollPanel panel = new ScrollPanel(x, y, width, height);
         int rowWidth = panel.rowWidth();
 
-        panel.add(new LabelRow(rowWidth, Text.translatable("viewmodel.section.swing")));
-        panel.add(new ValueSlider(rowWidth, Text.translatable("viewmodel.option.swing_speed"),
+        panel.add(new LabelRow(rowWidth, Component.translatable("viewmodel.section.swing")));
+        panel.add(new ValueSlider(rowWidth, Component.translatable("viewmodel.option.swing_speed"),
                 ViewModelConfig.SWING_SPEED_MIN, ViewModelConfig.SWING_SPEED_MAX, 0.05, 0.01, 1.0, "x", 2,
                 () -> config().swingSpeed, value -> config().swingSpeed = (float) value));
-        panel.add(new ValueSlider(rowWidth, Text.translatable("viewmodel.option.swing_amount"),
+        panel.add(new ValueSlider(rowWidth, Component.translatable("viewmodel.option.swing_amount"),
                 ViewModelConfig.SWING_AMOUNT_MIN, ViewModelConfig.SWING_AMOUNT_MAX, 0.05, 0.01, 1.0, "x", 2,
                 () -> config().swingAmount, value -> config().swingAmount = (float) value));
         panel.addSpacer(6);
 
-        panel.add(new LabelRow(rowWidth, Text.translatable("viewmodel.section.preview")));
-        panel.add(new ActionRow(rowWidth, Text.translatable("viewmodel.button.swing_once"), this::swingOnce));
-        panel.add(new ToggleRow(rowWidth, Text.translatable("viewmodel.option.auto_swing"),
+        panel.add(new LabelRow(rowWidth, Component.translatable("viewmodel.section.preview")));
+        panel.add(new ActionRow(rowWidth, Component.translatable("viewmodel.button.swing_once"), this::swingOnce));
+        panel.add(new ToggleRow(rowWidth, Component.translatable("viewmodel.option.auto_swing"),
                 () -> this.autoSwing, value -> this.autoSwing = value));
 
         this.screen.addPageWidget(panel);
     }
 
     private void swingOnce() {
-        ClientPlayerEntity player = this.client.player;
+        LocalPlayer player = this.minecraft.player;
         if (player != null) {
             // Local only: no packet, so the server never sees these preview swings.
-            player.swingHand(Hand.MAIN_HAND, true);
+            player.swing(InteractionHand.MAIN_HAND, true);
         }
     }
 
     @Override
     public void tick() {
-        ClientPlayerEntity player = this.client.player;
-        if (this.autoSwing && player != null && player.getHandSwingProgress(1.0F) <= 0.0F) {
+        LocalPlayer player = this.minecraft.player;
+        if (this.autoSwing && player != null && player.getAttackAnim(1.0F) <= 0.0F) {
             this.swingOnce();
         }
     }
 
     @Override
-    public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        Text note = this.client.player == null
-                ? Text.translatable("viewmodel.preview.needs_world")
-                : Text.translatable("viewmodel.preview.live_hand");
-        int x = this.screen.width - 8 - this.textRenderer.getWidth(note);
-        context.drawTextWithShadow(this.textRenderer, note, x, 10,
-                this.client.player == null ? Theme.TEXT_OFF : Theme.TEXT_DIM);
+    public void extract(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float delta) {
+        Component note = this.minecraft.player == null
+                ? Component.translatable("viewmodel.preview.needs_world")
+                : Component.translatable("viewmodel.preview.live_hand");
+        int x = this.screen.width - 8 - this.font.width(note);
+        graphics.text(this.font, note, x, 10,
+                this.minecraft.player == null ? Theme.TEXT_OFF : Theme.TEXT_DIM);
     }
 
     @Override
-    public Text getHint() {
-        return Text.translatable("viewmodel.hint.animation");
+    public Component getHint() {
+        return Component.translatable("viewmodel.hint.animation");
     }
 
     @Override

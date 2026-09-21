@@ -4,6 +4,7 @@ import dev.sosoph.viewmodel.config.Anchor;
 import dev.sosoph.viewmodel.config.ThirdPersonRule;
 import dev.sosoph.viewmodel.config.Transform;
 import dev.sosoph.viewmodel.config.ViewModelConfig;
+import dev.sosoph.viewmodel.gui.Compat;
 import dev.sosoph.viewmodel.gui.ItemPickerScreen;
 import dev.sosoph.viewmodel.gui.Theme;
 import dev.sosoph.viewmodel.gui.ViewModelScreen;
@@ -14,12 +15,12 @@ import dev.sosoph.viewmodel.gui.widget.RuleRow;
 import dev.sosoph.viewmodel.gui.widget.ScrollPanel;
 import dev.sosoph.viewmodel.gui.widget.ToggleRow;
 import dev.sosoph.viewmodel.gui.widget.ValueSlider;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.ingame.InventoryScreen;
-import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.client.option.Perspective;
-import net.minecraft.item.ItemStack;
-import net.minecraft.text.Text;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.screens.inventory.InventoryScreen;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.client.CameraType;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.network.chat.Component;
 
 /**
  * Per item placement in third person, for example a sword resting on the waist.
@@ -44,8 +45,8 @@ public class ThirdPersonPage extends ConfigPage {
     }
 
     @Override
-    public Text getTitle() {
-        return Text.translatable("viewmodel.tab.third_person");
+    public Component getTitle() {
+        return Component.translatable("viewmodel.tab.third_person");
     }
 
     @Override
@@ -96,17 +97,17 @@ public class ThirdPersonPage extends ConfigPage {
             }));
         }
         if (list.isEmpty()) {
-            list.add(new LabelRow(list.rowWidth(), Text.translatable("viewmodel.third_person.empty"), true));
+            list.add(new LabelRow(list.rowWidth(), Component.translatable("viewmodel.third_person.empty"), true));
         }
         this.screen.addPageWidget(list);
 
         int half = (width - 4) / 2;
-        ActionRow add = new ActionRow(half, Text.translatable("viewmodel.button.add"), this::openItemPicker);
+        ActionRow add = new ActionRow(half, Component.translatable("viewmodel.button.add"), this::openItemPicker);
         add.setPosition(x, y + listHeight + 4);
         add.setHeight(buttonHeight);
         this.screen.addPageWidget(add);
 
-        ActionRow remove = new ActionRow(half, Text.translatable("viewmodel.button.remove"), Theme.DANGER, () -> {
+        ActionRow remove = new ActionRow(half, Component.translatable("viewmodel.button.remove"), Theme.DANGER, () -> {
             if (this.selected != null) {
                 config().removeRule(this.selected);
                 this.selected = null;
@@ -123,14 +124,14 @@ public class ThirdPersonPage extends ConfigPage {
         ScrollPanel panel = new ScrollPanel(x, y, width, height);
         int rowWidth = panel.rowWidth();
 
-        panel.add(new LabelRow(rowWidth, Text.translatable("viewmodel.section.camera")));
-        panel.add(new CycleRow(rowWidth, Text.translatable("viewmodel.option.camera"),
-                () -> cameraName(this.client.options.getPerspective()),
-                () -> this.cyclePerspective(1), () -> this.cyclePerspective(-1)));
+        panel.add(new LabelRow(rowWidth, Component.translatable("viewmodel.section.camera")));
+        panel.add(new CycleRow(rowWidth, Component.translatable("viewmodel.option.camera"),
+                () -> cameraName(this.minecraft.options.getCameraType()),
+                () -> this.cycleCameraType(1), () -> this.cycleCameraType(-1)));
         panel.addSpacer(4);
 
         if (this.selected == null) {
-            panel.add(new LabelRow(rowWidth, Text.translatable("viewmodel.third_person.pick_rule"), true));
+            panel.add(new LabelRow(rowWidth, Component.translatable("viewmodel.third_person.pick_rule"), true));
             this.screen.addPageWidget(panel);
             return;
         }
@@ -138,8 +139,8 @@ public class ThirdPersonPage extends ConfigPage {
         ThirdPersonRule rule = this.selected;
         Transform transform = rule.transform;
 
-        panel.add(new LabelRow(rowWidth, Text.translatable("viewmodel.section.placement")));
-        panel.add(new CycleRow(rowWidth, Text.translatable("viewmodel.option.anchor"),
+        panel.add(new LabelRow(rowWidth, Component.translatable("viewmodel.section.placement")));
+        panel.add(new CycleRow(rowWidth, Component.translatable("viewmodel.option.anchor"),
                 () -> rule.anchor.getDisplayName(),
                 () -> {
                     rule.anchor = rule.anchor.next();
@@ -149,43 +150,43 @@ public class ThirdPersonPage extends ConfigPage {
                     rule.anchor = rule.anchor.previous();
                     config().invalidate();
                 }));
-        panel.add(new ToggleRow(rowWidth, Text.translatable("viewmodel.option.rule_enabled"),
+        panel.add(new ToggleRow(rowWidth, Component.translatable("viewmodel.option.rule_enabled"),
                 () -> rule.enabled, value -> {
             rule.enabled = value;
             config().invalidate();
         }));
-        panel.add(new ToggleRow(rowWidth, Text.translatable("viewmodel.option.hold_while_in_use"),
+        panel.add(new ToggleRow(rowWidth, Component.translatable("viewmodel.option.hold_while_in_use"),
                 () -> rule.holdWhileInUse, value -> rule.holdWhileInUse = value));
         panel.addSpacer(4);
 
-        panel.add(new LabelRow(rowWidth, Text.translatable("viewmodel.section.offset")));
-        panel.add(ValueSlider.position(rowWidth, Text.translatable("viewmodel.option.x"),
+        panel.add(new LabelRow(rowWidth, Component.translatable("viewmodel.section.offset")));
+        panel.add(ValueSlider.position(rowWidth, Component.translatable("viewmodel.option.x"),
                 () -> transform.x, value -> transform.x = (float) value));
-        panel.add(ValueSlider.position(rowWidth, Text.translatable("viewmodel.option.y"),
+        panel.add(ValueSlider.position(rowWidth, Component.translatable("viewmodel.option.y"),
                 () -> transform.y, value -> transform.y = (float) value));
-        panel.add(ValueSlider.position(rowWidth, Text.translatable("viewmodel.option.z"),
+        panel.add(ValueSlider.position(rowWidth, Component.translatable("viewmodel.option.z"),
                 () -> transform.z, value -> transform.z = (float) value));
-        panel.add(ValueSlider.rotation(rowWidth, Text.translatable("viewmodel.option.pitch"),
+        panel.add(ValueSlider.rotation(rowWidth, Component.translatable("viewmodel.option.pitch"),
                 () -> transform.pitch, value -> transform.pitch = (float) value));
-        panel.add(ValueSlider.rotation(rowWidth, Text.translatable("viewmodel.option.yaw"),
+        panel.add(ValueSlider.rotation(rowWidth, Component.translatable("viewmodel.option.yaw"),
                 () -> transform.yaw, value -> transform.yaw = (float) value));
-        panel.add(ValueSlider.rotation(rowWidth, Text.translatable("viewmodel.option.roll"),
+        panel.add(ValueSlider.rotation(rowWidth, Component.translatable("viewmodel.option.roll"),
                 () -> transform.roll, value -> transform.roll = (float) value));
-        panel.add(ValueSlider.scale(rowWidth, Text.translatable("viewmodel.option.scale"),
+        panel.add(ValueSlider.scale(rowWidth, Component.translatable("viewmodel.option.scale"),
                 () -> transform.scale, value -> transform.scale = (float) value));
         panel.addSpacer(4);
 
-        panel.add(new ActionRow(rowWidth, Text.translatable("viewmodel.button.preset_waist"), () -> {
+        panel.add(new ActionRow(rowWidth, Component.translatable("viewmodel.button.preset_waist"), () -> {
             rule.anchor = Anchor.WAIST_RIGHT;
             rule.transform.copyFrom(new Transform(0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 25.0F, 0.9F));
             config().invalidate();
         }));
-        panel.add(new ActionRow(rowWidth, Text.translatable("viewmodel.button.preset_back"), () -> {
+        panel.add(new ActionRow(rowWidth, Component.translatable("viewmodel.button.preset_back"), () -> {
             rule.anchor = Anchor.BACK;
             rule.transform.copyFrom(new Transform(0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 135.0F, 1.0F));
             config().invalidate();
         }));
-        panel.add(new ActionRow(rowWidth, Text.translatable("viewmodel.button.reset_offsets"), () -> {
+        panel.add(new ActionRow(rowWidth, Component.translatable("viewmodel.button.reset_offsets"), () -> {
             rule.transform.reset();
             config().invalidate();
         }));
@@ -193,19 +194,19 @@ public class ThirdPersonPage extends ConfigPage {
         this.screen.addPageWidget(panel);
     }
 
-    private void cyclePerspective(int direction) {
-        Perspective[] values = Perspective.values();
-        Perspective current = this.client.options.getPerspective();
+    private void cycleCameraType(int direction) {
+        CameraType[] values = CameraType.values();
+        CameraType current = this.minecraft.options.getCameraType();
         int index = (current.ordinal() + direction + values.length) % values.length;
-        this.client.options.setPerspective(values[index]);
+        this.minecraft.options.setCameraType(values[index]);
     }
 
-    private static Text cameraName(Perspective perspective) {
-        return Text.translatable("viewmodel.camera." + perspective.name().toLowerCase(java.util.Locale.ROOT));
+    private static Component cameraName(CameraType perspective) {
+        return Component.translatable("viewmodel.camera." + perspective.name().toLowerCase(java.util.Locale.ROOT));
     }
 
     private void openItemPicker() {
-        this.client.setScreen(new ItemPickerScreen(this.screen, Text.translatable("viewmodel.picker.add_rule"),
+        this.minecraft.setScreen(new ItemPickerScreen(this.screen, Component.translatable("viewmodel.picker.add_rule"),
                 entry -> {
                     ThirdPersonRule rule = new ThirdPersonRule(entry.id(), Anchor.WAIST_RIGHT,
                             new Transform(0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 25.0F, 0.9F));
@@ -215,19 +216,20 @@ public class ThirdPersonPage extends ConfigPage {
     }
 
     @Override
-    public void render(DrawContext context, int mouseX, int mouseY, float delta) {
+    public void extract(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float delta) {
         if (this.previewWidth <= 0) {
             return;
         }
         int right = this.previewX + this.previewWidth;
         int bottom = this.previewY + this.previewHeight;
-        context.fill(this.previewX, this.previewY, right, bottom, Theme.PREVIEW_BG);
-        context.drawBorder(this.previewX, this.previewY, this.previewWidth, this.previewHeight, Theme.BORDER);
+        graphics.fill(this.previewX, this.previewY, right, bottom, Theme.PREVIEW_BG);
+        Compat.border(graphics, this.previewX, this.previewY, this.previewWidth, this.previewHeight,
+                Theme.BORDER);
 
-        ClientPlayerEntity player = this.client.player;
+        LocalPlayer player = this.minecraft.player;
         if (player == null) {
-            context.drawCenteredTextWithShadow(this.textRenderer,
-                    Text.translatable("viewmodel.preview.needs_world"),
+            graphics.centeredText(this.font,
+                    Component.translatable("viewmodel.preview.needs_world"),
                     this.previewX + this.previewWidth / 2, this.previewY + this.previewHeight / 2 - 4,
                     Theme.TEXT_OFF);
             return;
@@ -241,28 +243,28 @@ public class ThirdPersonPage extends ConfigPage {
         }
 
         int size = Math.min(this.previewWidth, this.previewHeight) / 2;
-        InventoryScreen.drawEntity(context, this.previewX + 2, this.previewY + 2, right - 2, bottom - 2, size,
+        InventoryScreen.extractEntityInInventoryFollowsMouse(graphics, this.previewX + 2, this.previewY + 2, right - 2, bottom - 2, size,
                 0.0625F, this.previewMouseX, this.previewMouseY, player);
 
-        Text label = Text.translatable("viewmodel.preview.model");
-        context.drawTextWithShadow(this.textRenderer, label,
-                this.previewX + (this.previewWidth - this.textRenderer.getWidth(label)) / 2, bottom + 4,
+        Component label = Component.translatable("viewmodel.preview.model");
+        graphics.text(this.font, label,
+                this.previewX + (this.previewWidth - this.font.width(label)) / 2, bottom + 4,
                 Theme.TEXT_DIM);
 
         if (this.selected != null) {
-            ItemStack held = player.getMainHandStack();
+            ItemStack held = player.getMainHandItem();
             if (!held.isEmpty() && !held.getItem().equals(ViewModelConfig.itemOf(this.selected.item))) {
-                Text hold = Text.translatable("viewmodel.preview.hold_item");
-                context.drawTextWithShadow(this.textRenderer, hold,
-                        this.previewX + (this.previewWidth - this.textRenderer.getWidth(hold)) / 2, bottom + 16,
+                Component hold = Component.translatable("viewmodel.preview.hold_item");
+                graphics.text(this.font, hold,
+                        this.previewX + (this.previewWidth - this.font.width(hold)) / 2, bottom + 16,
                         Theme.TEXT_OFF);
             }
         }
     }
 
     @Override
-    public Text getHint() {
-        return Text.translatable("viewmodel.hint.third_person");
+    public Component getHint() {
+        return Component.translatable("viewmodel.hint.third_person");
     }
 
     @Override

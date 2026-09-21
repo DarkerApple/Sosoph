@@ -5,10 +5,10 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
-import net.minecraft.registry.Registries;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 
 /** A searchable snapshot of the item registry, built once and reused by every list. */
 public final class ItemIndex {
@@ -23,12 +23,12 @@ public final class ItemIndex {
     public static List<Entry> all() {
         if (entries == null) {
             List<Entry> built = new ArrayList<>();
-            for (Item item : Registries.ITEM) {
+            for (Item item : BuiltInRegistries.ITEM) {
                 if (item == Items.AIR) {
                     continue;
                 }
-                String id = Registries.ITEM.getId(item).toString();
-                String name = new ItemStack(item).getName().getString();
+                String id = BuiltInRegistries.ITEM.getKey(item).toString();
+                String name = new ItemStack(item).getHoverName().getString();
                 built.add(new Entry(item, id, name, (name + " " + id).toLowerCase(Locale.ROOT)));
             }
             built.sort(Comparator.comparing(Entry::name, String.CASE_INSENSITIVE_ORDER));

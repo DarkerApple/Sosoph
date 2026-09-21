@@ -7,11 +7,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
-import net.minecraft.registry.Registries;
-import net.minecraft.util.Identifier;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.Identifier;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 
 /** Everything the mod remembers. Serialized to {@code config/viewmodel.json}. */
 public class ViewModelConfig {
@@ -80,10 +80,14 @@ public class ViewModelConfig {
 
     /** The rule that should place this stack, or null when it renders normally. */
     public ThirdPersonRule ruleFor(ItemStack stack) {
-        if (!this.thirdPersonEnabled || stack.isEmpty()) {
+        return stack.isEmpty() ? null : this.ruleForId(idOf(stack.getItem()));
+    }
+
+    /** Same lookup by registry id, for third person where only the id survives. */
+    public ThirdPersonRule ruleForId(String id) {
+        if (!this.thirdPersonEnabled || id == null || id.isEmpty()) {
             return null;
         }
-        String id = idOf(stack.getItem());
         if (this.isBlacklisted(id)) {
             return null;
         }
@@ -127,7 +131,7 @@ public class ViewModelConfig {
     // -- housekeeping ------------------------------------------------------
 
     public static String idOf(Item item) {
-        return Registries.ITEM.getId(item).toString();
+        return BuiltInRegistries.ITEM.getKey(item).toString();
     }
 
     /** The item for a saved id, or null when that id is not in this game's registry. */
@@ -136,7 +140,7 @@ public class ViewModelConfig {
         if (identifier == null) {
             return null;
         }
-        Item item = Registries.ITEM.get(identifier);
+        Item item = BuiltInRegistries.ITEM.getValue(identifier);
         return item == Items.AIR && !"minecraft:air".equals(id) ? null : item;
     }
 

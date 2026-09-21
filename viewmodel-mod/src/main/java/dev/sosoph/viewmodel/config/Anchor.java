@@ -1,8 +1,8 @@
 package dev.sosoph.viewmodel.config;
 
-import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.text.Text;
-import net.minecraft.util.math.RotationAxis;
+import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.math.Axis;
+import net.minecraft.network.chat.Component;
 
 /**
  * Where a third person item is attached to the body.
@@ -36,8 +36,8 @@ public enum Anchor {
         return this.id;
     }
 
-    public Text getDisplayName() {
-        return Text.translatable("viewmodel.anchor." + this.id);
+    public Component getDisplayName() {
+        return Component.translatable("viewmodel.anchor." + this.id);
     }
 
     public boolean isHand() {
@@ -45,10 +45,10 @@ public enum Anchor {
     }
 
     /** Moves the matrix stack from the body origin to this attachment point. */
-    public void applyBase(MatrixStack matrices) {
-        matrices.translate(this.modelX / 16.0F, this.modelY / 16.0F, this.modelZ / 16.0F);
-        matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(-90.0F));
-        matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(180.0F));
+    public void applyBase(PoseStack poses) {
+        poses.translate(this.modelX / 16.0F, this.modelY / 16.0F, this.modelZ / 16.0F);
+        poses.mulPose(Axis.XP.rotationDegrees(-90.0F));
+        poses.mulPose(Axis.YP.rotationDegrees(180.0F));
     }
 
     public Anchor next() {

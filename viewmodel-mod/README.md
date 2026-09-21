@@ -20,10 +20,14 @@ drag a slider.
 
 | | |
 |---|---|
-| Minecraft | 1.21.1 |
-| Loader | Fabric |
-| Required | Fabric API |
+| Minecraft | 26.3 |
+| Loader | Fabric, loader 0.19.5+ |
+| Java | 25 |
+| Required | Fabric API 0.161.0+26.3 |
 | Optional | Mod Menu |
+
+Minecraft has shipped unobfuscated since 26.1, so this builds against the real
+names with no Yarn or other mappings involved.
 
 Client side only. Nothing is sent to the server: swing speed changes the local
 animation, and the preview swings never leave your client.
@@ -35,8 +39,9 @@ animation, and the preview swings never leave your client.
 ./gradlew runClient      # test it in a dev client
 ```
 
-The first build downloads Minecraft, Yarn mappings and Fabric Loom, so it needs
-network access to `maven.fabricmc.net` and Mojang's asset hosts.
+The first build downloads Minecraft and Fabric Loom, so it needs network access to
+`maven.fabricmc.net` and Mojang's asset hosts. Gradle runs on **JDK 25** here; on
+macOS that is `export JAVA_HOME=$(/usr/libexec/java_home -v 25)`.
 
 ## Using the menu
 
@@ -106,8 +111,15 @@ out of range is clamped on load.
 
 - The menu deliberately does not pause singleplayer, otherwise nothing would
   animate while you tune it.
-- Mixin targets are pinned to 1.21.1 Yarn names (`HeldItemRenderer#renderFirstPersonItem`,
-  `HeldItemFeatureRenderer#renderItem`, `LivingEntity#getHandSwingDuration`). Moving
-  to another Minecraft version means checking those three names.
+- Mixin targets are pinned to 26.3: `FirstPersonHandsAndItemsRenderer#submitArmWithItem`
+  for the first person offsets, `LivingEntity#getCurrentSwingDuration` for swing speed,
+  and `ItemInHandLayer#submitArmWithItem` plus `PlayerRenderer#extractRenderState` for
+  third person placement. Moving Minecraft version means checking those four.
+- Third person rendering works off render states, which no longer carry the entity or
+  its item stacks, so `PlayerRendererMixin` copies the held item ids and an "in use"
+  flag onto the render state (`HeldItemInfo`) for the item layer to read back.
+- `gui/Compat.java` holds the few 26.3 calls that were hardest to pin down: the mouse
+  button accessor, the GUI item icon call, and string trimming. If something in the
+  menu does not compile, look there first.
 - No license is declared yet. Add one to `fabric.mod.json` and drop a `LICENSE` file
   here before publishing the jar anywhere.

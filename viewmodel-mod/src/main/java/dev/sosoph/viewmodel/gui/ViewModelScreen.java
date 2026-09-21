@@ -12,12 +12,10 @@ import dev.sosoph.viewmodel.gui.page.ThirdPersonPage;
 import dev.sosoph.viewmodel.gui.widget.ActionRow;
 import dev.sosoph.viewmodel.gui.widget.TabButton;
 import dev.sosoph.viewmodel.gui.widget.ToggleRow;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.Drawable;
-import net.minecraft.client.gui.Element;
-import net.minecraft.client.gui.Selectable;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.text.Text;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.components.AbstractWidget;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.network.chat.Component;
 
 /**
  * The whole menu: a narrow panel on the left so the game, and your hands, stay visible
@@ -41,7 +39,7 @@ public class ViewModelScreen extends Screen {
     private int panelBottom;
 
     public ViewModelScreen(Screen parent) {
-        super(Text.translatable("viewmodel.title"));
+        super(Component.translatable("viewmodel.title"));
         this.parent = parent;
         this.pages.add(new FirstPersonPage(this));
         this.pages.add(new AnimationPage(this));
@@ -55,8 +53,8 @@ public class ViewModelScreen extends Screen {
     }
 
     /** Pages call this instead of touching the screen's child list directly. */
-    public <T extends Element & Drawable & Selectable> T addPageWidget(T widget) {
-        return this.addDrawableChild(widget);
+    public <T extends AbstractWidget> T addPageWidget(T widget) {
+        return this.addRenderableWidget(widget);
     }
 
     /** Rebuilds the widgets on the next frame, never mid click. */
@@ -82,7 +80,7 @@ public class ViewModelScreen extends Screen {
 
         // Master switch, top right of the header.
         ToggleRow master = new ToggleRow(Math.min(96, contentWidth / 2),
-                Text.translatable("viewmodel.option.enabled"),
+                Component.translatable("viewmodel.option.enabled"),
                 () -> ConfigManager.get().enabled, value -> ConfigManager.get().enabled = value);
         master.setPosition(this.panelX + this.panelWidth - PADDING - master.getWidth(), this.panelY + 4);
         master.setHeight(16);
@@ -106,63 +104,59 @@ public class ViewModelScreen extends Screen {
 
         // Footer.
         int buttonWidth = (contentWidth - 8) / 3;
-        ActionRow resetPage = new ActionRow(buttonWidth, Text.translatable("viewmodel.button.reset_page"), () -> {
-            page.resetPage();
-            this.rebuild();
-        });
+        ActionRow resetPage = new ActionRow(buttonWidth, Component.translatable("viewmodel.button.reset_page"),
+                () -> {
+                    page.resetPage();
+                    this.rebuild();
+                });
         resetPage.setPosition(contentX, footerY);
         this.addPageWidget(resetPage);
 
-        ActionRow resetAll = new ActionRow(buttonWidth, Text.translatable("viewmodel.button.reset_all"),
+        ActionRow resetAll = new ActionRow(buttonWidth, Component.translatable("viewmodel.button.reset_all"),
                 Theme.DANGER, () -> {
-            ConfigManager.resetAll();
-            this.rebuild();
-        });
+                    ConfigManager.resetAll();
+                    this.rebuild();
+                });
         resetAll.setPosition(contentX + buttonWidth + 4, footerY);
         this.addPageWidget(resetAll);
 
         ActionRow done = new ActionRow(contentWidth - (buttonWidth + 4) * 2,
-                Text.translatable("gui.done"), Theme.ACCENT, this::close);
+                Component.translatable("gui.done"), Theme.ACCENT, this::onClose);
         done.setPosition(contentX + (buttonWidth + 4) * 2, footerY);
         this.addPageWidget(done);
 
         page.init(contentX, contentY, contentWidth, contentHeight);
     }
 
-    private void drawChrome(DrawContext context) {
-        context.fill(this.panelX, this.panelY, this.panelX + this.panelWidth, this.panelY + 44, Theme.PANEL_HEADER);
-        context.fill(this.panelX, this.panelY + 44, this.panelX + this.panelWidth, this.panelBottom, Theme.PANEL);
-        context.drawBorder(this.panelX, this.panelY, this.panelWidth, this.panelBottom - this.panelY, Theme.BORDER);
+    private void drawChrome(GuiGraphicsExtractor graphics) {
+        graphics.fill(this.panelX, this.panelY, this.panelX + this.panelWidth, this.panelY + 44,
+                Theme.PANEL_HEADER);
+        graphics.fill(this.panelX, this.panelY + 44, this.panelX + this.panelWidth, this.panelBottom, Theme.PANEL);
+        Compat.border(graphics, this.panelX, this.panelY, this.panelWidth, this.panelBottom - this.panelY,
+                Theme.BORDER);
 
-        context.drawTextWithShadow(this.textRenderer, this.title, this.panelX + PADDING, this.panelY + 8, Theme.TEXT);
+        graphics.text(this.font, this.title, this.panelX + PADDING, this.panelY + 8, Theme.TEXT);
 
-        Text hint = this.currentPage().getHint();
-        String line = hint.getString();
-        int maxWidth = this.panelWidth - PADDING * 2;
-        if (this.textRenderer.getWidth(line) > maxWidth) {
-            line = this.textRenderer.trimToWidth(line, maxWidth);
-        }
-        context.drawTextWithShadow(this.textRenderer, line, this.panelX + PADDING, this.panelBottom - 14,
-                Theme.TEXT_OFF);
+        String hint = Compat.trim(this.font, this.currentPage().getHint().getString(),
+                this.panelWidth - PADDING * 2);
+        graphics.text(this.font, hint, this.panelX + PADDING, this.panelBottom - 14, Theme.TEXT_OFF);
     }
 
     @Override
-    public void renderBackground(DrawContext context, int mouseX, int mouseY, float delta) {
-        // In a world the game itself is the preview, so it is left untouched.
-        if (this.client == null || this.client.world == null) {
-            super.renderBackground(context, mouseX, mouseY, delta);
-        }
-        this.drawChrome(context);
-    }
-
-    @Override
-    public void render(DrawContext context, int mouseX, int mouseY, float delta) {
+    public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float delta) {
         if (this.needsRebuild) {
             this.needsRebuild = false;
-            this.clearAndInit();
+            this.rebuildWidgets();
         }
-        super.render(context, mouseX, mouseY, delta);
-        this.currentPage().render(context, mouseX, mouseY, delta);
+
+        // In a world the game itself is the preview, so it is left untouched.
+        if (this.minecraft == null || this.minecraft.level == null) {
+            this.extractBackground(graphics, mouseX, mouseY, delta);
+        }
+
+        this.drawChrome(graphics);
+        super.extractRenderState(graphics, mouseX, mouseY, delta);
+        this.currentPage().extract(graphics, mouseX, mouseY, delta);
     }
 
     @Override
@@ -171,7 +165,7 @@ public class ViewModelScreen extends Screen {
     }
 
     @Override
-    public boolean shouldPause() {
+    public boolean isPauseScreen() {
         // The world has to keep running, otherwise nothing animates while you tune it.
         return false;
     }
@@ -182,10 +176,10 @@ public class ViewModelScreen extends Screen {
     }
 
     @Override
-    public void close() {
+    public void onClose() {
         ConfigManager.save();
-        if (this.client != null) {
-            this.client.setScreen(this.parent);
+        if (this.minecraft != null) {
+            this.minecraft.setScreen(this.parent);
         }
     }
 }

@@ -2,19 +2,20 @@ package dev.sosoph.viewmodel.gui.widget;
 
 import java.util.function.Supplier;
 
+import dev.sosoph.viewmodel.gui.Compat;
 import dev.sosoph.viewmodel.gui.Theme;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.text.Text;
-import org.lwjgl.glfw.GLFW;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.input.MouseButtonEvent;
+import net.minecraft.network.chat.Component;
 
 /** Label on the left, current choice on the right. Left click goes forward, right click back. */
 public class CycleRow extends Row {
-    private final Supplier<Text> value;
+    private final Supplier<Component> value;
     private final Runnable forward;
     private final Runnable backward;
 
-    public CycleRow(int width, Text label, Supplier<Text> value, Runnable forward, Runnable backward) {
+    public CycleRow(int width, Component label, Supplier<Component> value, Runnable forward, Runnable backward) {
         super(width, HEIGHT, label);
         this.value = value;
         this.forward = forward;
@@ -22,22 +23,22 @@ public class CycleRow extends Row {
     }
 
     @Override
-    protected void renderWidget(DrawContext context, int mouseX, int mouseY, float delta) {
-        this.drawBackground(context, this.isOver(mouseX, mouseY));
-        context.drawTextWithShadow(this.textRenderer, this.getMessage(), this.getX() + 5, this.textY(), Theme.TEXT);
-        Text current = this.value.get();
-        context.drawTextWithShadow(this.textRenderer, current,
-                this.getX() + this.getWidth() - 5 - this.textRenderer.getWidth(current), this.textY(), Theme.ACCENT);
+    protected void extractContents(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float delta) {
+        this.drawBackground(graphics, this.isOver(mouseX, mouseY));
+        graphics.text(this.font, this.getMessage(), this.getX() + 5, this.textY(), Theme.TEXT);
+        Component current = this.value.get();
+        graphics.text(this.font, current, this.getX() + this.getWidth() - 5 - this.font.width(current),
+                this.textY(), Theme.ACCENT);
     }
 
     @Override
-    public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        if (!this.active || !this.isOver(mouseX, mouseY)) {
+    public boolean mouseClicked(MouseButtonEvent click, boolean doubleClick) {
+        if (!this.active || !this.isOver(Compat.mouseX(click), Compat.mouseY(click))) {
             return false;
         }
-        if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
+        if (Compat.isLeftClick(click)) {
             this.forward.run();
-        } else if (button == GLFW.GLFW_MOUSE_BUTTON_RIGHT) {
+        } else if (Compat.isRightClick(click)) {
             this.backward.run();
         } else {
             return false;
