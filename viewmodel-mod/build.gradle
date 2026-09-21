@@ -1,5 +1,8 @@
 plugins {
-    id 'fabric-loom' version "${loom_version}"
+    // The no-remap Loom plugin. Minecraft ships unobfuscated since 26.1, so this is
+    // the id to use: the old "fabric-loom" id is the remapping one and demands a
+    // mappings dependency that no longer exists.
+    id 'net.fabricmc.fabric-loom' version "${loom_version}"
 }
 
 version = project.mod_version
@@ -7,6 +10,16 @@ group = project.maven_group
 
 base {
     archivesName = project.archives_base_name
+}
+
+// Mod Menu support is opt in: set modmenu_version in gradle.properties to a build
+// that exists for this Minecraft version, and the entrypoint is compiled and
+// registered. Left empty, the mod builds without it and opens with its keybind.
+def modmenuVersion = (project.findProperty('modmenu_version') ?: '').toString().trim()
+def withModMenu = !modmenuVersion.isEmpty()
+
+if (withModMenu) {
+    sourceSets.main.java.srcDir 'src/modmenu/java'
 }
 
 repositories {
@@ -23,16 +36,20 @@ dependencies {
     implementation "net.fabricmc:fabric-loader:${project.loader_version}"
     implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
 
-    // Compile only integration. The mod runs fine without Mod Menu installed;
-    // remove this line and the "modmenu" entrypoint if it will not resolve.
-    modCompileOnly "com.terraformersmc:modmenu:${project.modmenu_version}"
+    if (withModMenu) {
+        compileOnly "com.terraformersmc:modmenu:${modmenuVersion}"
+    }
 }
 
 processResources {
     inputs.property 'version', project.version
+    inputs.property 'withModMenu', withModMenu
 
     filesMatching('fabric.mod.json') {
-        expand version: project.version
+        expand version: project.version,
+                modmenu_entrypoint: withModMenu
+                        ? ',\n      "modmenu": ["dev.sosoph.viewmodel.ModMenuIntegration"]'
+                        : ''
     }
 }
 

@@ -121,5 +121,12 @@ out of range is clamped on load.
 - `gui/Compat.java` holds the few 26.3 calls that were hardest to pin down: the mouse
   button accessor, the GUI item icon call, and string trimming. If something in the
   menu does not compile, look there first.
+- Mod Menu support is opt in. Set `modmenu_version` in `gradle.properties` to a build
+  that exists for this Minecraft version and the config-screen entrypoint is compiled
+  and registered; left empty, the mod builds without it and the `]` keybind is the way
+  in. Their 26.3 build was still alpha when this was written.
+- The build uses the `net.fabricmc.fabric-loom` plugin id, not `fabric-loom`. The
+  latter is the remapping plugin and insists on a mappings dependency, which
+  unobfuscated Minecraft no longer has.
 - No license is declared yet. Add one to `fabric.mod.json` and drop a `LICENSE` file
   here before publishing the jar anywhere.

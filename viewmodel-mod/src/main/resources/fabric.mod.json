@@ -11,8 +11,7 @@
   "icon": "assets/viewmodel/icon.png",
   "environment": "client",
   "entrypoints": {
-    "client": ["dev.sosoph.viewmodel.ViewModelClient"],
-    "modmenu": ["dev.sosoph.viewmodel.ModMenuIntegration"]
+    "client": ["dev.sosoph.viewmodel.ViewModelClient"]${modmenu_entrypoint}
   },
   "mixins": [
     {
