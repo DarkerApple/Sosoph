@@ -90,3 +90,10 @@ tools/check-chart.js  headless chart validator
 
 `window.sosoph` exposes the live `game`, `song`, `audio` and `renderer` for
 poking at from the console.
+
+## Also in this repo
+
+`viewmodel-mod/` is an unrelated side project: a Fabric client mod for Minecraft
+1.21.1 that moves held item view models, tunes swing speed, and places items on the
+body in third person, all from one in-game menu. See
+[`viewmodel-mod/README.md`](viewmodel-mod/README.md).

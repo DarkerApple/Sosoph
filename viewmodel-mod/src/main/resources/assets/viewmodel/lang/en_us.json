@@ -1,0 +1,83 @@
+{
+  "viewmodel.title": "ViewModel",
+
+  "viewmodel.tab.first_person": "Hands",
+  "viewmodel.tab.animation": "Animation",
+  "viewmodel.tab.third_person": "3rd person",
+  "viewmodel.tab.blacklist": "Blacklist",
+
+  "viewmodel.section.main_hand": "Main hand",
+  "viewmodel.section.off_hand": "Off hand",
+  "viewmodel.section.tools": "Tools",
+  "viewmodel.section.swing": "Swing",
+  "viewmodel.section.preview": "Preview",
+  "viewmodel.section.camera": "Camera",
+  "viewmodel.section.placement": "Placement",
+  "viewmodel.section.offset": "Offset",
+
+  "viewmodel.option.enabled": "Enabled",
+  "viewmodel.option.x": "X  right",
+  "viewmodel.option.y": "Y  up",
+  "viewmodel.option.z": "Z  forward",
+  "viewmodel.option.pitch": "Pitch",
+  "viewmodel.option.yaw": "Yaw",
+  "viewmodel.option.roll": "Roll",
+  "viewmodel.option.scale": "Scale",
+  "viewmodel.option.swing_speed": "Swing speed",
+  "viewmodel.option.swing_amount": "Swing amount",
+  "viewmodel.option.auto_swing": "Auto swing",
+  "viewmodel.option.camera": "View",
+  "viewmodel.option.anchor": "Attach to",
+  "viewmodel.option.rule_enabled": "Rule enabled",
+  "viewmodel.option.hold_while_in_use": "Hold while in use",
+
+  "viewmodel.button.copy_to_off_hand": "Copy to off hand",
+  "viewmodel.button.mirror_to_off_hand": "Mirror to off hand",
+  "viewmodel.button.swing_once": "Swing once",
+  "viewmodel.button.add": "Add",
+  "viewmodel.button.remove": "Remove",
+  "viewmodel.button.use_held": "Use held item",
+  "viewmodel.button.add_held": "Add held item",
+  "viewmodel.button.clear": "Clear",
+  "viewmodel.button.preset_waist": "Preset: on the waist",
+  "viewmodel.button.preset_back": "Preset: on the back",
+  "viewmodel.button.reset_offsets": "Reset offsets",
+  "viewmodel.button.reset_page": "Reset page",
+  "viewmodel.button.reset_all": "Reset all",
+
+  "viewmodel.state.on": "ON",
+  "viewmodel.state.off": "OFF",
+
+  "viewmodel.anchor.hand": "Hand",
+  "viewmodel.anchor.waist_right": "Waist, right",
+  "viewmodel.anchor.waist_left": "Waist, left",
+  "viewmodel.anchor.back": "Back",
+  "viewmodel.anchor.shoulder_right": "Shoulder, right",
+  "viewmodel.anchor.shoulder_left": "Shoulder, left",
+
+  "viewmodel.camera.first_person": "First person",
+  "viewmodel.camera.third_person_back": "Third person, back",
+  "viewmodel.camera.third_person_front": "Third person, front",
+
+  "viewmodel.preview.live_hand": "Live preview: your hand updates as you drag",
+  "viewmodel.preview.needs_world": "Join a world to see the preview",
+  "viewmodel.preview.model": "Move the mouse here to turn",
+  "viewmodel.preview.hold_item": "Hold that item to see it",
+
+  "viewmodel.blacklist.ignored": "IGNORED",
+  "viewmodel.blacklist.modified": "MOVED",
+  "viewmodel.blacklist.count": "Ignored items: %s",
+  "viewmodel.blacklist.search": "Search items...",
+
+  "viewmodel.picker.add_rule": "Pick an item",
+
+  "viewmodel.third_person.empty": "No rules yet",
+  "viewmodel.third_person.pick_rule": "Pick a rule, or add one",
+
+  "viewmodel.hint.sliders": "Drag, shift+wheel for fine steps, right click resets",
+  "viewmodel.hint.animation": "Auto swing keeps the arm moving while you tune",
+  "viewmodel.hint.third_person": "Switch the view to third person to see it on you",
+  "viewmodel.hint.blacklist": "Ignored items always render the vanilla way",
+
+  "key.viewmodel.open_menu": "Open ViewModel menu"
+}

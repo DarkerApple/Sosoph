@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "id": "viewmodel",
+  "version": "${version}",
+  "name": "ViewModel",
+  "description": "Move your first person items per hand, tune swing speed, and place items on the body in third person. Configured from a clean in-game menu with live previews.",
+  "authors": ["Sosoph"],
+  "contact": {
+    "sources": "https://github.com/DarkerApple/Sosoph"
+  },
+  "icon": "assets/viewmodel/icon.png",
+  "environment": "client",
+  "entrypoints": {
+    "client": ["dev.sosoph.viewmodel.ViewModelClient"],
+    "modmenu": ["dev.sosoph.viewmodel.ModMenuIntegration"]
+  },
+  "mixins": [
+    {
+      "config": "viewmodel.mixins.json",
+      "environment": "client"
+    }
+  ],
+  "depends": {
+    "fabricloader": ">=0.16.0",
+    "minecraft": "~1.21.1",
+    "java": ">=21",
+    "fabric-api": "*"
+  },
+  "suggests": {
+    "modmenu": "*"
+  }
+}
